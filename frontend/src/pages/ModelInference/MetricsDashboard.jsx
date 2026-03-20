@@ -63,17 +63,27 @@ const MetricCard = ({ title, value, subtitle, icon: Icon, iconKey }) => (
 
 const MetricsDashboard = ({ inferences = [] }) => {
   const totalInferences = inferences.length;
-  const totalDetections = inferences.reduce((acc, inf) => acc + (inf.detections?.length ?? 0), 0);
-  const totalViolations = inferences.reduce(
-    (acc, inf) => acc + (inf.detections?.filter((d) => d.is_violation).length ?? 0),
+
+  const totalDetections = inferences.reduce(
+    (acc, inf) => acc + (inf.detections?.length ?? 0),
     0
   );
-  const avgMAP = totalInferences
-    ? (inferences.reduce((acc, inf) => acc + (inf.mAP ?? 0), 0) / totalInferences).toFixed(2)
-    : '0.00';
-  const avgFPS = totalInferences
-    ? (inferences.reduce((acc, inf) => acc + (inf.fps ?? 0), 0) / totalInferences).toFixed(1)
-    : '0';
+
+  const totalViolations = inferences.reduce(
+    (acc, inf) => acc + (inf.total_violations ?? inf.violations?.length ?? 0),
+    0
+  );
+
+  const totalPersons = inferences.reduce(
+    (acc, inf) => acc + (inf.total_persons ?? 0),
+    0
+  );
+
+  const avgProcessingTime = totalInferences
+    ? Math.round(
+        inferences.reduce((acc, inf) => acc + (inf.processing_time_ms ?? 0), 0) / totalInferences
+      )
+    : 0;
 
   return (
     <Grid container spacing={1.5} justifyContent="center" sx={{ flexWrap: 'nowrap' }}>
@@ -88,36 +98,36 @@ const MetricsDashboard = ({ inferences = [] }) => {
       </Grid>
       <Grid item xs>
         <MetricCard
-          title="Safety Observations"
-          value={totalDetections}
-          subtitle="Total items checked (e.g. helmet, vest)"
+          title="Persons Detected"
+          value={totalPersons}
+          subtitle="Total people found in scans"
           icon={FilterCenterFocus}
           iconKey="FilterCenterFocus"
         />
       </Grid>
       <Grid item xs>
         <MetricCard
-          title="Safety Issues Detected"
+          title="Safety Issues"
           value={totalViolations}
-          subtitle="Number of times required PPE was missing"
+          subtitle="Missing helmet or vest violations"
           icon={Warning}
           iconKey="Warning"
         />
       </Grid>
       <Grid item xs>
         <MetricCard
-          title="Detection Accuracy"
-          value={avgMAP}
-          subtitle="AI confidence level (higher is better)"
+          title="Total Detections"
+          value={totalDetections}
+          subtitle="All objects detected by AI"
           icon={Analytics}
           iconKey="Analytics"
         />
       </Grid>
       <Grid item xs>
         <MetricCard
-          title="Processing Speed"
-          value={avgFPS}
-          subtitle="Speed of analysis (frames per second)"
+          title="Avg Speed"
+          value={`${avgProcessingTime}ms`}
+          subtitle="Average inference processing time"
           icon={Speed}
           iconKey="Speed"
         />

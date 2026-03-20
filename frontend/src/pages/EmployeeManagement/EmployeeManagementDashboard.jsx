@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Dialog,
@@ -31,6 +31,7 @@ import {
   CameraAlt,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { changeEmployeePassword, updateEmployeeProfile } from '../../services/api';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import EmployeeDashboardHome from './EmployeeDashboardHome';
@@ -38,7 +39,7 @@ import EmployeeSupportInquiries from './EmployeeSupportInquiries';
 import EmployeeNotificationsPage from './EmployeeNotificationsPage';
 import EmployeeFeedbackPage from './EmployeeFeedbackPage';
 
-// Notifications data (replace with API data)
+// Notifications data
 const INITIAL_NOTIFICATIONS = [];
 
 const EmployeeManagementDashboard = () => {
@@ -63,6 +64,21 @@ const EmployeeManagementDashboard = () => {
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [selectedNotifId, setSelectedNotifId] = useState(null);
 
+  // Fetch employee notifications from API
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      if (!user?.id) return;
+      try {
+        const { getEmployeeNotifications } = await import('../../services/api');
+        const res = await getEmployeeNotifications(user.id);
+        setNotifications(res.data.notifications || []);
+      } catch (err) {
+        console.error('Failed to load notifications:', err);
+      }
+    };
+    fetchNotifications();
+  }, [user?.id]);
+
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -75,11 +91,26 @@ const EmployeeManagementDashboard = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleMarkAllRead = () =>
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const handleMarkAllRead = async () => {
+    try {
+      const { markNotificationRead } = await import('../../services/api');
+      const unread = notifications.filter(n => !n.read);
+      await Promise.all(unread.map(n => markNotificationRead(n.id, user?.id)));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Mark all read error:', err);
+    }
+  };
 
-  const handleMarkRead = (id) =>
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+  const handleMarkRead = async (id) => {
+    try {
+      const { markNotificationRead } = await import('../../services/api');
+      await markNotificationRead(id, user?.id);
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.error('Mark read error:', err);
+    }
+  };
 
   const handleSeeAllNotifications = () => {
     setSelectedNotifId(null);
@@ -93,15 +124,23 @@ const EmployeeManagementDashboard = () => {
     handleMarkRead(id);
   };
 
-  const handleSavePhone = () => {
+  const handleSavePhone = async () => {
     if (!phoneDraft.trim()) return;
-    setPhone(phoneDraft.trim());
-    setPhoneEditing(false);
-    setPhoneSuccess(true);
-    setTimeout(() => setPhoneSuccess(false), 3000);
+    try {
+      await updateEmployeeProfile(user?.id, { phone: phoneDraft.trim() });
+      setPhone(phoneDraft.trim());
+      setPhoneEditing(false);
+      setPhoneSuccess(true);
+      setTimeout(() => setPhoneSuccess(false), 3000);
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Failed to update phone';
+      setPhoneEditing(false);
+      setPwError(msg);
+      setTimeout(() => setPwError(''), 3000);
+    }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!passwords.current || !passwords.newPw || !passwords.confirm) {
       setPwError('All fields are required.'); return;
     }
@@ -111,10 +150,20 @@ const EmployeeManagementDashboard = () => {
     if (passwords.newPw.length < 6) {
       setPwError('Password must be at least 6 characters.'); return;
     }
-    setPwError('');
-    setPwSuccess(true);
-    setPasswords({ current: '', newPw: '', confirm: '' });
-    setTimeout(() => setPwSuccess(false), 3000);
+    try {
+      await changeEmployeePassword({
+        employeeId: user?.employeeId || user?.username,
+        currentPassword: passwords.current,
+        newPassword: passwords.newPw,
+      });
+      setPwError('');
+      setPwSuccess(true);
+      setPasswords({ current: '', newPw: '', confirm: '' });
+      setTimeout(() => setPwSuccess(false), 3000);
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Failed to change password';
+      setPwError(msg);
+    }
   };
 
   return (

@@ -34,11 +34,23 @@ import {
   KeyboardArrowUp,
   AlternateEmail,
   MarkEmailUnread,
+  Engineering,
+  Badge,
 } from '@mui/icons-material';
 
 // Employee and zone data (replace with API data)
 const MOCK_EMPLOYEES = [];
 const ZONES = [];
+
+// Warehouse Staff data (frontend only)
+const WAREHOUSE_STAFF = [
+  { id: 'ws1', name: 'Nimal Perera', role: 'Warehouse Manager', email: 'nimal.perera@safetyfirst.lk', department: 'Operations', status: 'active' },
+  { id: 'ws2', name: 'Suresh Kumar', role: 'Shift Supervisor', email: 'suresh.kumar@safetyfirst.lk', department: 'Operations', status: 'active' },
+  { id: 'ws3', name: 'Amara Silva', role: 'Safety Officer', email: 'amara.silva@safetyfirst.lk', department: 'Safety', status: 'active' },
+  { id: 'ws4', name: 'Dinesh Fernando', role: 'Inventory Lead', email: 'dinesh.fernando@safetyfirst.lk', department: 'Inventory', status: 'active' },
+  { id: 'ws5', name: 'Priya Jayawardena', role: 'Forklift Operator', email: 'priya.jayawardena@safetyfirst.lk', department: 'Operations', status: 'on-leave' },
+  { id: 'ws6', name: 'Ruwan Bandara', role: 'Quality Inspector', email: 'ruwan.bandara@safetyfirst.lk', department: 'Quality', status: 'active' },
+];
 
 const RECIPIENT_MODES = [
   { key: 'individual', label: 'Specific Employees', icon: PersonAdd },
@@ -627,6 +639,81 @@ const SendEmailForm = () => {
               </Box>
             </Paper>
           )}
+        </Box>
+
+        {/* ── Section: Warehouse Staff ── */}
+        <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+            <Box sx={{
+              width: 38, height: 38, borderRadius: '10px',
+              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <Engineering sx={{ color: '#fff', fontSize: 20 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '15px' }}>
+                Warehouse Staff
+              </Typography>
+              <Typography sx={{ fontSize: '12px', color: '#94a3b8' }}>
+                Active warehouse team members and their roles
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+            gap: 2, mt: 2
+          }}>
+            {WAREHOUSE_STAFF.map((staff) => (
+              <Paper key={staff.id} elevation={0}
+                sx={{
+                  border: '1.5px solid #e2e8f0', borderRadius: '14px', p: 2,
+                  transition: 'all 0.2s', cursor: 'default',
+                  '&:hover': { borderColor: '#fdba74', backgroundColor: '#fff7ed', transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(249,115,22,0.08)' }
+                }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                  <Avatar sx={{
+                    width: 42, height: 42, fontSize: '15px', fontWeight: 700,
+                    bgcolor: '#fff7ed', color: '#ea580c', border: '2px solid #fdba74'
+                  }}>
+                    {staff.name.split(' ').map(n => n[0]).join('')}
+                  </Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '14px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {staff.name}
+                    </Typography>
+                    <Typography sx={{ fontSize: '12px', color: '#ea580c', fontWeight: 600 }}>
+                      {staff.role}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Divider sx={{ borderColor: '#f1f5f9', mb: 1.2 }} />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Email sx={{ fontSize: 13, color: '#94a3b8' }} />
+                    <Typography sx={{ fontSize: '11.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {staff.email}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
+                    <Chip label={staff.department} size="small"
+                      sx={{ fontSize: '10.5px', fontWeight: 600, height: 22, backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }} />
+                    <Chip
+                      label={staff.status === 'active' ? 'Active' : 'On Leave'}
+                      size="small"
+                      sx={{
+                        fontSize: '10.5px', fontWeight: 700, height: 22,
+                        backgroundColor: staff.status === 'active' ? '#f0fdf4' : '#fef3c7',
+                        color: staff.status === 'active' ? '#16a34a' : '#d97706',
+                        border: `1px solid ${staff.status === 'active' ? '#bbf7d0' : '#fde68a'}`
+                      }} />
+                  </Box>
+                </Box>
+              </Paper>
+            ))}
+          </Box>
         </Box>
 
         {/* ── Email Preview ── */}

@@ -166,7 +166,7 @@ const Login = () => {
               required
               fullWidth
               id="username"
-              label="Username"
+              label="Username or Employee ID"
               name="username"
               autoComplete="username"
               autoFocus

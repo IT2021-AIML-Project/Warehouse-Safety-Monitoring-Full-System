@@ -1,5 +1,6 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { getInferencesByZone, deleteInferenceApi } from '../../services/api';
 import {
   Typography,
   Box,
@@ -55,30 +56,29 @@ import UploadImage from './UploadImage';
 import InferenceTable from './InferenceTable';
 import MetricsDashboard from './MetricsDashboard';
 
-const allZones = [
-  { id: 'ZONE-001', name: 'Storage Block A',      type: 'Storage',    status: 'Active'   },
-  { id: 'ZONE-002', name: 'Loading Dock 1',        type: 'Loading',    status: 'Active'   },
-  { id: 'ZONE-003', name: 'Packing Station B',     type: 'Packing',    status: 'Active'   },
-  { id: 'ZONE-004', name: 'Restricted Area North', type: 'Restricted', status: 'Active'   },
-  { id: 'ZONE-005', name: 'Storage Block B',       type: 'Storage',    status: 'Inactive' },
-  { id: 'ZONE-006', name: 'Loading Dock 2',        type: 'Loading',    status: 'Active'   },
-  { id: 'ZONE-007', name: 'Packing Station C',     type: 'Packing',    status: 'Inactive' },
-  { id: 'ZONE-008', name: 'Restricted Area South', type: 'Restricted', status: 'Active'   },
-];
-const activeZones = allZones.filter((z) => z.status === 'Active');
+// Category → emoji + color mapping for PPE items
+const ppeCategoryDisplay = {
+  'Head Protection': { emoji: '⛑️', bg: '#dbeafe' },
+  'Foot Protection': { emoji: '🥾', bg: '#fef9c3' },
+  'Body Protection': { emoji: '🦺', bg: '#dcfce7' },
+  'Hand Protection': { emoji: '🧤', bg: '#f3e8ff' },
+  'Face Protection': { emoji: '🛡️', bg: '#fee2e2' },
+  'Eye Protection': { emoji: '🥽', bg: '#e0f2fe' },
+};
+const getPPEDisplay = (category) => ppeCategoryDisplay[category] || { emoji: '🔧', bg: '#f1f5f9' };
 
 const typeColorMap = {
-  Storage:    { bg: '#dbeafe', color: '#1d4ed8' },
-  Loading:    { bg: '#fef9c3', color: '#a16207' },
+  Storage: { bg: '#dbeafe', color: '#1d4ed8' },
+  Loading: { bg: '#fef9c3', color: '#a16207' },
   Restricted: { bg: '#fee2e2', color: '#dc2626' },
-  Packing:    { bg: '#dcfce7', color: '#16a34a' },
+  Packing: { bg: '#dcfce7', color: '#16a34a' },
 };
 
 const zoneSvgPaths = {
-  Storage:    'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-  Loading:    'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zm-.5 1.5 1.96 2.5H17V9.5h2.5zM6 18c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm13.5-1c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1z',
+  Storage: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+  Loading: 'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zm-.5 1.5 1.96 2.5H17V9.5h2.5zM6 18c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm13.5-1c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1z',
   Restricted: 'M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4 5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z',
-  Packing:    'M18 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C8.96 2.54 8.05 2 7 2 5.34 2 4 3.34 4 5c0 .35.07.69.18 1H2v13h2v3h16v-3h2V6h-4zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM7 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z',
+  Packing: 'M18 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C8.96 2.54 8.05 2 7 2 5.34 2 4 3.34 4 5c0 .35.07.69.18 1H2v13h2v3h16v-3h2V6h-4zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM7 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z',
 };
 
 const ZoneIconBox = ({ type, size = 56 }) => {
@@ -97,58 +97,6 @@ const ZoneIconBox = ({ type, size = 56 }) => {
   );
 };
 
-const zonePPEItems = {
-  Storage:    [
-    { name: 'Safety Helmet',   category: 'Head Protection',   emoji: '⛑️',  bg: '#dbeafe' },
-    { name: 'Safety Vest',     category: 'Body Protection',   emoji: '🦺',  bg: '#dcfce7' },
-    { name: 'Safety Boots',    category: 'Foot Protection',   emoji: '🥾',  bg: '#fef9c3' },
-  ],
-  Loading:    [
-    { name: 'Safety Helmet',   category: 'Head Protection',   emoji: '⛑️',  bg: '#dbeafe' },
-    { name: 'High-Vis Jacket', category: 'Body Protection',   emoji: '🦺',  bg: '#dcfce7' },
-    { name: 'Safety Boots',    category: 'Foot Protection',   emoji: '🥾',  bg: '#fef9c3' },
-    { name: 'Safety Gloves',   category: 'Hand Protection',   emoji: '🧤',  bg: '#f3e8ff' },
-  ],
-  Restricted: [
-    { name: 'Safety Helmet',   category: 'Head Protection',   emoji: '⛑️',  bg: '#dbeafe' },
-    { name: 'High-Vis Jacket', category: 'Body Protection',   emoji: '🦺',  bg: '#dcfce7' },
-    { name: 'Safety Boots',    category: 'Foot Protection',   emoji: '🥾',  bg: '#fef9c3' },
-    { name: 'Safety Gloves',   category: 'Hand Protection',   emoji: '🧤',  bg: '#f3e8ff' },
-    { name: 'Face Shield',     category: 'Face Protection',   emoji: '🛡️',  bg: '#fee2e2' },
-  ],
-  Packing:    [
-    { name: 'Safety Helmet',   category: 'Head Protection',   emoji: '⛑️',  bg: '#dbeafe' },
-    { name: 'Safety Vest',     category: 'Body Protection',   emoji: '🦺',  bg: '#dcfce7' },
-    { name: 'Safety Gloves',   category: 'Hand Protection',   emoji: '🧤',  bg: '#f3e8ff' },
-  ],
-};
-
-const CLASS_LABELS = ['Helmet', 'No Helmet', 'Vest', 'No Vest'];
-const generateId = () =>
-  typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-const randomInRange = (min, max) => min + Math.random() * (max - min);
-
-function generateSimulatedInference() {
-  const inference_id = generateId();
-  const timestamp = new Date().toISOString();
-  const fps = Math.floor(randomInRange(5, 30));
-  const mAP = Number(randomInRange(0.8, 0.95).toFixed(2));
-  const numDetections = Math.floor(randomInRange(1, 3)) + 1;
-  const detections = [];
-  for (let i = 0; i < numDetections; i++) {
-    const class_label = CLASS_LABELS[Math.floor(Math.random() * CLASS_LABELS.length)];
-    const is_violation = class_label === 'No Helmet' || class_label === 'No Vest';
-    detections.push({
-      detection_id: generateId(),
-      class_label,
-      confidence: Number(randomInRange(0.6, 0.99).toFixed(2)),
-      is_violation,
-    });
-  }
-  return { inference_id, timestamp, fps, mAP, detections };
-}
 
 const drawerWidth = 260;
 
@@ -157,8 +105,11 @@ const ModelInferenceDashboard = () => {
   const navigate = useNavigate();
 
   const [selectedZone, setSelectedZone] = useState(null);
+  const [allZones, setAllZones] = useState([]);
   const [mode, setMode] = useState(0);
   const [inferences, setInferences] = useState([]);
+  const [zonesLoading, setZonesLoading] = useState(true);
+  const [inferencesLoading, setInferencesLoading] = useState(false);
 
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -188,13 +139,67 @@ const ModelInferenceDashboard = () => {
   const [lastRunTime, setLastRunTime] = useState(null);
 
   const addInference = (inference) => setInferences((prev) => [inference, ...prev]);
-  const deleteInference = (inferenceId) =>
-    setInferences((prev) => prev.filter((inf) => inf.inference_id !== inferenceId));
+  const deleteInference = async (inferenceId) => {
+    try {
+      await deleteInferenceApi(inferenceId);
+      setInferences((prev) => prev.filter((inf) => inf.inference_id !== inferenceId));
+    } catch (err) {
+      console.error('Failed to delete inference:', err);
+    }
+  };
+
+  // Load existing inferences when a zone is selected
+  const loadZoneInferences = useCallback(async (zoneId) => {
+    if (!zoneId) return;
+    setInferencesLoading(true);
+    try {
+      const res = await getInferencesByZone(zoneId);
+      setInferences(res.data.inferences || []);
+    } catch (err) {
+      console.error('Failed to load inferences:', err);
+      setInferences([]);
+    } finally {
+      setInferencesLoading(false);
+    }
+  }, []);
+
+  // Fetch zones with PPE items from API
+  useEffect(() => {
+    const fetchZones = async () => {
+      try {
+        const { getPopulatedZones } = await import('../../services/api');
+        const res = await getPopulatedZones();
+        const zones = (res.data.zones || []).map(z => ({
+          id: z._id,
+          zoneId: z.zoneId,
+          name: z.name,
+          type: z.type,
+          status: z.status,
+          items: z.items || [],
+        }));
+        setAllZones(zones);
+      } catch (err) {
+        console.error('Failed to load zones:', err);
+      } finally {
+        setZonesLoading(false);
+      }
+    };
+    fetchZones();
+  }, []);
+
+  const activeZones = allZones.filter((z) => z.status === 'Active');
+
+  // Filter inferences to only show the selected zone's results
+  const zoneInferences = useMemo(() => {
+    if (!selectedZone) return [];
+    return inferences.filter(
+      (inf) => inf.zone_id === selectedZone.zoneId || inf.zone_id === selectedZone.id
+    );
+  }, [inferences, selectedZone]);
 
   useEffect(() => {
     if (!webcamActive) return;
     webcamIntervalRef.current = setInterval(() => {
-      addInference(generateSimulatedInference());
       setWebcamFramesProcessed((n) => n + 1);
     }, 2000);
     return () => { if (webcamIntervalRef.current) clearInterval(webcamIntervalRef.current); };
@@ -208,16 +213,7 @@ const ModelInferenceDashboard = () => {
     const runCycle = () => {
       setScheduledRunsToday((n) => n + 1);
       setLastRunTime(new Date().toISOString());
-      let frames = 0;
-      let violations = 0;
-      for (let i = 0; i < scheduleFramesPerCycle; i++) {
-        const inf = generateSimulatedInference();
-        addInference(inf);
-        frames += 1;
-        violations += inf.detections?.filter((d) => d.is_violation).length ?? 0;
-      }
-      setTotalFramesProcessed((n) => n + frames);
-      setTotalViolationsFromMonitoring((n) => n + violations);
+      setTotalFramesProcessed((n) => n + scheduleFramesPerCycle);
     };
     runCycle();
     scheduleIntervalRef.current = setInterval(runCycle, 10000);
@@ -268,19 +264,20 @@ const ModelInferenceDashboard = () => {
     setMode(0);
     setWebcamActive(false);
     setScheduleActive(false);
-    setInferences([]);
+    setInferences([]);  // Clear old zone's results immediately
     setWebcamFramesProcessed(0);
     setScheduledRunsToday(0);
     setTotalFramesProcessed(0);
     setTotalViolationsFromMonitoring(0);
     setLastRunTime(null);
+    loadZoneInferences(zone.zoneId);  // Load only this zone's results from API
   };
   const handleBackToZones = () => {
     setSelectedZone(null);
     setWebcamActive(false);
     setScheduleActive(false);
+    setInferences([]);  // Clear results when going back
   };
-
   const schedulePreviewText = scheduleLunchEnabled
     ? `System will run hourly from ${scheduleStartTime} to ${scheduleEndTime}, excluding ${scheduleBreakStart}${scheduleBreakEnd}. Each cycle will process ${scheduleFramesPerCycle} frames over 2 minutes.`
     : `System will run hourly from ${scheduleStartTime} to ${scheduleEndTime}. Each cycle will process ${scheduleFramesPerCycle} frames over 2 minutes.`;
@@ -471,7 +468,7 @@ const ModelInferenceDashboard = () => {
                                 {zone.name}
                               </Typography>
                               <Typography variant="caption" sx={{ color: '#64748b' }}>
-                                {zone.id}
+                                {zone.zoneId}
                               </Typography>
                             </Box>
                           </Box>
@@ -501,25 +498,34 @@ const ModelInferenceDashboard = () => {
 
             {/* Assigned PPE Items */}
             {selectedZone && (() => {
-              const ppeItems = zonePPEItems[selectedZone.type] || [];
+              const ppeItems = selectedZone.items || [];
               return (
                 <Box sx={{ px: 4, pt: 3, pb: 2, backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                   <Typography variant="overline" sx={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', letterSpacing: '0.08em', display: 'block', mb: 2, textAlign: 'center' }}>
                     Assigned PPE Items
                   </Typography>
-                  <Grid container spacing={2} justifyContent="center">
-                    {ppeItems.map((item) => (
-                      <Grid item xs={6} sm={4} md={2} key={item.name}>
-                        <Card elevation={0} sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', p: 2, backgroundColor: '#ffffff', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 16px rgba(0,0,0,0.08)' } }}>
-                          <Box sx={{ width: 64, height: 64, borderRadius: '14px', backgroundColor: item.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 1.5, fontSize: '32px' }}>
-                            {item.emoji}
-                          </Box>
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#1e293b', mb: 0.25 }}>{item.name}</Typography>
-                          <Typography variant="caption" sx={{ color: '#1976D2', fontWeight: 500 }}>{item.category}</Typography>
-                        </Card>
-                      </Grid>
-                    ))}
-                  </Grid>
+                  {ppeItems.length === 0 ? (
+                    <Typography variant="body2" sx={{ textAlign: 'center', color: '#94a3b8', py: 2 }}>
+                      No PPE items assigned to this zone yet.
+                    </Typography>
+                  ) : (
+                    <Grid container spacing={2} justifyContent="center">
+                      {ppeItems.map((item) => {
+                        const display = getPPEDisplay(item.category);
+                        return (
+                          <Grid item xs={6} sm={4} md={2} key={item._id || item.name}>
+                            <Card elevation={0} sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', p: 2, backgroundColor: '#ffffff', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 16px rgba(0,0,0,0.08)' } }}>
+                              <Box sx={{ width: 64, height: 64, borderRadius: '14px', backgroundColor: display.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 1.5, fontSize: '32px' }}>
+                                {display.emoji}
+                              </Box>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#1e293b', mb: 0.25 }}>{item.name}</Typography>
+                              <Typography variant="caption" sx={{ color: '#1976D2', fontWeight: 500 }}>{item.category}</Typography>
+                            </Card>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+                  )}
                 </Box>
               );
             })()}
@@ -549,7 +555,7 @@ const ModelInferenceDashboard = () => {
                     Upload a warehouse image to perform a one-time AI safety analysis for this zone.
                   </Typography>
                 </Box>
-                <UploadImage onInferenceComplete={addInference} />
+                <UploadImage key={selectedZone?.zoneId} onInferenceComplete={addInference} zoneId={selectedZone?.zoneId} ppeItems={selectedZone?.items || []} />
               </Box>
             )}
 
@@ -693,7 +699,7 @@ const ModelInferenceDashboard = () => {
                 <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1e293b' }}>Performance Overview</Typography>
                 <Typography variant="body2" sx={{ color: '#64748b' }}>Key metrics from all safety scans in this zone.</Typography>
               </Box>
-              <MetricsDashboard inferences={inferences} />
+              <MetricsDashboard inferences={zoneInferences} />
             </Box>
 
             {/* Safety Scan History */}
@@ -704,7 +710,7 @@ const ModelInferenceDashboard = () => {
               </Box>
               <Card elevation={0} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
                 <CardContent sx={{ p: 3 }}>
-                  <InferenceTable inferences={inferences} onDelete={deleteInference} />
+                  <InferenceTable inferences={zoneInferences} onDelete={deleteInference} />
                 </CardContent>
               </Card>
               <Typography variant="caption" sx={{ display: 'block', mt: 2, color: '#94a3b8', fontStyle: 'italic' }}>
@@ -736,11 +742,11 @@ const ModelInferenceDashboard = () => {
           <IconButton onClick={handleChangePasswordClose} sx={{ color: '#64748b' }}><Close /></IconButton>
         </DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
-          {passwordError   && <Alert severity="error"   sx={{ mb: 2 }}>{passwordError}</Alert>}
+          {passwordError && <Alert severity="error" sx={{ mb: 2 }}>{passwordError}</Alert>}
           {passwordSuccess && <Alert severity="success" sx={{ mb: 2 }}>{passwordSuccess}</Alert>}
           {[
             { field: 'currentPassword', label: 'Current Password', key: 'current' },
-            { field: 'newPassword',     label: 'New Password',     key: 'new'     },
+            { field: 'newPassword', label: 'New Password', key: 'new' },
             { field: 'confirmPassword', label: 'Confirm New Password', key: 'confirm' },
           ].map(({ field, label, key }) => (
             <TextField

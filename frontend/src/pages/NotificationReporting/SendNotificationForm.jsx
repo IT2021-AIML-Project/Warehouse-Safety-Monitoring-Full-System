@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -46,9 +46,14 @@ const SEVERITIES = [
   { value: 'success', label: 'Success', color: '#16a34a', bg: '#dcfce7', icon: TaskAlt },
 ];
 
-// Employee and zone data (replace with API data)
-const MOCK_EMPLOYEES = [];
-const ZONES = [];
+// Zone color themes
+const ZONE_COLORS = [
+  { color: '#1d4ed8', bg: '#dbeafe', border: '#93c5fd', lightBg: '#eff6ff' },
+  { color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd', lightBg: '#faf5ff' },
+  { color: '#059669', bg: '#d1fae5', border: '#6ee7b7', lightBg: '#ecfdf5' },
+  { color: '#dc2626', bg: '#fee2e2', border: '#fca5a5', lightBg: '#fef2f2' },
+  { color: '#d97706', bg: '#fef3c7', border: '#fcd34d', lightBg: '#fffbeb' },
+];
 
 const RECIPIENT_MODES = [
   { key: 'individual', label: 'Specific Employees', icon: PersonAdd },
@@ -101,7 +106,47 @@ const SendNotificationForm = ({ onNotificationSent }) => {
   const [successMsg, setSuccessMsg] = useState('');
   const [errors, setErrors] = useState({});
   const [expandedZones, setExpandedZones] = useState({});
+  const [sending, setSending] = useState(false);
   const fileInputRef = useRef(null);
+
+  // ── Dynamic data from API ──
+  const [employees, setEmployees] = useState([]);
+  const [zones, setZones] = useState([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const { getPopulatedZones } = await import('../../services/api');
+        const res = await getPopulatedZones();
+        const populatedZones = res.data.zones || [];
+
+        // Build employees list from zone assignments
+        const empMap = new Map();
+        populatedZones.forEach(z => {
+          (z.employees || []).forEach(e => {
+            if (!empMap.has(e._id)) {
+              empMap.set(e._id, { id: e._id, name: e.name, email: e.email, zone: z.name, role: 'Warehouse Staff' });
+            }
+          });
+        });
+        setEmployees(Array.from(empMap.values()));
+
+        // Build zones list
+        setZones(populatedZones.map((z, i) => {
+          const theme = ZONE_COLORS[i % ZONE_COLORS.length];
+          return {
+            id: z._id,
+            label: z.name,
+            description: z.type || 'Zone',
+            ...theme,
+          };
+        }));
+      } catch (err) {
+        console.error('Failed to load employees/zones:', err);
+      }
+    };
+    fetchData();
+  }, []);
 
   // ── File helpers ──
   const processFiles = (rawFiles) => {
@@ -143,11 +188,11 @@ const SendNotificationForm = ({ onNotificationSent }) => {
   const SevIcon = sevCfg.icon;
 
   // ── Filter employees ──
-  const filteredEmployees = MOCK_EMPLOYEES.filter(
+  const filteredEmployees = employees.filter(
     (e) =>
       !form.selectedEmployees.includes(e.id) &&
       (e.name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-        e.zone.toLowerCase().includes(employeeSearch.toLowerCase())),
+        (e.zone || '').toLowerCase().includes(employeeSearch.toLowerCase())),
   );
 
   const addEmployee = (id) => {
@@ -169,9 +214,17 @@ const SendNotificationForm = ({ onNotificationSent }) => {
     setErrors((er) => ({ ...er, recipients: '' }));
   };
 
-  const zoneEmployees = (zoneId) => MOCK_EMPLOYEES.filter((e) => e.zone === zoneId);
+  const zoneEmployees = (zoneId) => {
+    const z = zones.find(z => z.id === zoneId);
+    return z ? employees.filter(e => e.zone === z.label) : [];
+  };
 
-  const zoneRecipients = MOCK_EMPLOYEES.filter((e) => form.selectedZones.includes(e.zone));
+  const zoneRecipients = employees.filter((e) => {
+    return form.selectedZones.some(zid => {
+      const z = zones.find(z => z.id === zid);
+      return z && e.zone === z.label;
+    });
+  });
 
   const toggleZoneExpand = (zoneId) =>
     setExpandedZones((prev) => ({ ...prev, [zoneId]: !prev[zoneId] }));
@@ -190,44 +243,53 @@ const SendNotificationForm = ({ onNotificationSent }) => {
   };
 
   // ── Submit ──
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!validate()) return;
+    setSending(true);
 
-    let recipients;
-    if (form.recipientMode === 'all') recipients = MOCK_EMPLOYEES;
-    else if (form.recipientMode === 'zone') recipients = zoneRecipients;
-    else recipients = MOCK_EMPLOYEES.filter((e) => form.selectedEmployees.includes(e.id));
+    try {
+      const { sendNotification } = await import('../../services/api');
 
-    const notification = {
-      id: Date.now(),
-      title: form.title.trim(),
-      message: form.message.trim(),
-      severity: form.severity,
-      time: 'Just now',
-      read: false,
-      recipientMode: form.recipientMode,
-      recipients: recipients.map((r) => r.id),
-      ...(form.recipientMode === 'zone' && { zones: form.selectedZones }),
-      attachments: attachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url })),
-    };
+      let recipientIds;
+      if (form.recipientMode === 'all') recipientIds = employees.map(e => e.id);
+      else if (form.recipientMode === 'zone') recipientIds = zoneRecipients.map(e => e.id);
+      else recipientIds = form.selectedEmployees;
 
-    onNotificationSent?.(notification, recipients);
+      const payload = {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        severity: form.severity,
+        recipientMode: form.recipientMode,
+        recipients: recipientIds,
+        zones: form.recipientMode === 'zone' ? form.selectedZones : [],
+      };
 
-    const label =
-      form.recipientMode === 'all'
-        ? 'all employees'
-        : form.recipientMode === 'zone'
-          ? `${recipients.length} employee${recipients.length !== 1 ? 's' : ''} across ${form.selectedZones.length} zone${form.selectedZones.length !== 1 ? 's' : ''}`
-          : `${recipients.length} employee${recipients.length !== 1 ? 's' : ''}`;
+      const res = await sendNotification(payload);
+      const saved = res.data.notification;
 
-    setSuccessMsg(`Notification sent to ${label} successfully!`);
-    setForm(initForm);
-    setAttachments([]);
-    setAttachError('');
-    setEmployeeSearch('');
-    setExpandedZones({});
-    setErrors({});
-    setTimeout(() => setSuccessMsg(''), 5000);
+      onNotificationSent?.(saved);
+
+      const label =
+        form.recipientMode === 'all'
+          ? 'all employees'
+          : form.recipientMode === 'zone'
+            ? `${recipientIds.length} employee${recipientIds.length !== 1 ? 's' : ''} across ${form.selectedZones.length} zone${form.selectedZones.length !== 1 ? 's' : ''}`
+            : `${recipientIds.length} employee${recipientIds.length !== 1 ? 's' : ''}`;
+
+      setSuccessMsg(`Notification sent to ${label} successfully!`);
+      setForm(initForm);
+      setAttachments([]);
+      setAttachError('');
+      setEmployeeSearch('');
+      setExpandedZones({});
+      setErrors({});
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (err) {
+      console.error('Send notification error:', err);
+      setErrors({ submit: err.response?.data?.message || 'Failed to send notification' });
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -500,7 +562,7 @@ const SendNotificationForm = ({ onNotificationSent }) => {
             <Box>
               {/* Zone cards */}
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: errors.recipients ? 0.5 : 0 }}>
-                {ZONES.map((zone) => {
+                {zones.map((zone) => {
                   const emps = zoneEmployees(zone.id);
                   const selected = form.selectedZones.includes(zone.id);
                   const expanded = expandedZones[zone.id];
@@ -627,7 +689,7 @@ const SendNotificationForm = ({ onNotificationSent }) => {
                   </Box>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8 }}>
                     {form.selectedZones.map((zid) => {
-                      const z = ZONES.find((z) => z.id === zid);
+                      const z = zones.find((z) => z.id === zid);
                       const cnt = zoneEmployees(zid).length;
                       return z ? (
                         <Chip
@@ -661,7 +723,7 @@ const SendNotificationForm = ({ onNotificationSent }) => {
                   All Employees Selected
                 </Typography>
                 <Typography sx={{ color: '#16a34a', fontSize: '13px' }}>
-                  This notification will be sent to all {MOCK_EMPLOYEES.length} registered warehouse employees.
+                  This notification will be sent to all {employees.length} registered warehouse employees.
                 </Typography>
               </Box>
             </Paper>
@@ -683,7 +745,7 @@ const SendNotificationForm = ({ onNotificationSent }) => {
               {form.selectedEmployees.length > 0 && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
                   {form.selectedEmployees.map((id) => {
-                    const emp = MOCK_EMPLOYEES.find((e) => e.id === id);
+                    const emp = employees.find((e) => e.id === id);
                     return emp ? (
                       <Chip
                         key={id}
@@ -807,7 +869,7 @@ const SendNotificationForm = ({ onNotificationSent }) => {
           </Button>
           <Tooltip title={
             form.recipientMode === 'all'
-              ? `Send to all ${MOCK_EMPLOYEES.length} employees`
+              ? `Send to all ${employees.length} employees`
               : form.recipientMode === 'zone' && form.selectedZones.length > 0
                 ? `Send to ${zoneRecipients.length} employee${zoneRecipients.length !== 1 ? 's' : ''} across ${form.selectedZones.length} zone${form.selectedZones.length !== 1 ? 's' : ''}`
                 : form.selectedEmployees.length > 0

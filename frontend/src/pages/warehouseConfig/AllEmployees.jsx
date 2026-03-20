@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -22,11 +22,10 @@ import {
   Button,
   MenuItem,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { Search, People, Edit, Delete, Close, WarningAmber } from '@mui/icons-material';
-
-// Data array (replace with API data)
-const dummyEmployees = [];
+import { getAllEmployees as fetchEmployees, updateEmployee, deleteEmployee } from '../../services/api';
 
 const getInitials = (name) =>
   name.split(' ').map((n) => n[0]).join('').toUpperCase();
@@ -34,7 +33,8 @@ const getInitials = (name) =>
 const avatarColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
 
 const AllEmployees = () => {
-  const [employees, setEmployees] = useState(dummyEmployees);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   // ── Edit dialog ──
@@ -46,10 +46,27 @@ const AllEmployees = () => {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  // Fetch employees from API
+  const loadEmployees = async () => {
+    try {
+      setLoading(true);
+      const res = await fetchEmployees();
+      setEmployees(res.data.employees);
+    } catch (error) {
+      console.error('Failed to fetch employees:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEmployees();
+  }, []);
+
   const filtered = employees.filter(
     (emp) =>
       emp.name.toLowerCase().includes(search.toLowerCase()) ||
-      emp.id.toLowerCase().includes(search.toLowerCase()) ||
+      emp.employeeId.toLowerCase().includes(search.toLowerCase()) ||
       emp.email.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -71,11 +88,20 @@ const AllEmployees = () => {
     setEditError('');
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!editData.email.trim()) { setEditError('Email is required.'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editData.email)) { setEditError('Enter a valid email address.'); return; }
-    setEmployees((prev) => prev.map((e) => (e.id === editData.id ? editData : e)));
-    handleEditClose();
+    try {
+      await updateEmployee(editData._id, {
+        email: editData.email,
+        status: editData.status,
+      });
+      handleEditClose();
+      loadEmployees();
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Failed to update employee';
+      setEditError(msg);
+    }
   };
 
   // ── Delete handlers ──
@@ -89,9 +115,14 @@ const AllEmployees = () => {
     setDeleteTarget(null);
   };
 
-  const handleDeleteConfirm = () => {
-    setEmployees((prev) => prev.filter((e) => e.id !== deleteTarget.id));
-    handleDeleteClose();
+  const handleDeleteConfirm = async () => {
+    try {
+      await deleteEmployee(deleteTarget._id);
+      handleDeleteClose();
+      loadEmployees();
+    } catch (error) {
+      console.error('Failed to delete employee:', error);
+    }
   };
 
   return (
@@ -126,101 +157,108 @@ const AllEmployees = () => {
           />
         </Box>
 
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Employee</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Employee ID</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Email</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Joined</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 6, color: '#94a3b8' }}>
-                    No employees found.
-                  </TableCell>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                  <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Employee</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Employee ID</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Email</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Joined</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#64748b', fontSize: '13px' }}>Actions</TableCell>
                 </TableRow>
-              ) : (
-                filtered.map((emp, index) => (
-                  <TableRow
-                    key={emp.id}
-                    sx={{
-                      '&:hover': { backgroundColor: '#f8fafc' },
-                      '&:last-child td': { border: 0 },
-                    }}
-                  >
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Avatar
-                          sx={{
-                            width: 36,
-                            height: 36,
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            backgroundColor: avatarColors[index % avatarColors.length],
-                          }}
-                        >
-                          {getInitials(emp.name)}
-                        </Avatar>
-                        <Typography variant="body2" sx={{ fontWeight: 500, color: '#1e293b' }}>
-                          {emp.name}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
-                        {emp.id}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        {emp.email}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={emp.status}
-                        size="small"
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: '12px',
-                          backgroundColor: emp.status === 'Active' ? '#dcfce7' : '#fee2e2',
-                          color: emp.status === 'Active' ? '#16a34a' : '#dc2626',
-                          border: 'none',
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        {emp.joined}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        <Tooltip title="Edit">
-                          <IconButton size="small" sx={{ color: '#3b82f6' }} onClick={() => handleEditOpen(emp)}>
-                            <Edit fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton size="small" sx={{ color: '#ef4444' }} onClick={() => handleDeleteOpen(emp)}>
-                            <Delete fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
+              </TableHead>
+              <TableBody>
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 6, color: '#94a3b8' }}>
+                      No employees found.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                ) : (
+                  filtered.map((emp, index) => (
+                    <TableRow
+                      key={emp._id}
+                      sx={{
+                        '&:hover': { backgroundColor: '#f8fafc' },
+                        '&:last-child td': { border: 0 },
+                      }}
+                    >
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Avatar
+                            sx={{
+                              width: 36,
+                              height: 36,
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              backgroundColor: avatarColors[index % avatarColors.length],
+                            }}
+                          >
+                            {getInitials(emp.name)}
+                          </Avatar>
+                          <Typography variant="body2" sx={{ fontWeight: 500, color: '#1e293b' }}>
+                            {emp.name}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
+                          {emp.employeeId}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {emp.email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={emp.status}
+                          size="small"
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: '12px',
+                            backgroundColor: emp.status === 'Active' ? '#dcfce7' : '#fee2e2',
+                            color: emp.status === 'Active' ? '#16a34a' : '#dc2626',
+                            border: 'none',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {new Date(emp.createdAt).toLocaleDateString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Tooltip title="Edit">
+                            <IconButton size="small" sx={{ color: '#3b82f6' }} onClick={() => handleEditOpen(emp)}>
+                              <Edit fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton size="small" sx={{ color: '#ef4444' }} onClick={() => handleDeleteOpen(emp)}>
+                              <Delete fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Paper>
+
       {/* ── Edit Dialog ── */}
       <Dialog
         open={editOpen}
@@ -239,7 +277,7 @@ const AllEmployees = () => {
 
           {/* Read-only fields */}
           <TextField
-            fullWidth label="Employee ID" value={editData?.id || ''}
+            fullWidth label="Employee ID" value={editData?.employeeId || ''}
             disabled variant="outlined" margin="normal"
             sx={{ mb: 1, '& .MuiInputBase-input.Mui-disabled': { WebkitTextFillColor: '#94a3b8' } }}
           />
@@ -294,7 +332,7 @@ const AllEmployees = () => {
             <strong style={{ color: '#1e293b' }}>{deleteTarget?.name}</strong>?
           </Typography>
           <Typography variant="body2" sx={{ color: '#94a3b8', fontFamily: 'monospace', mt: 0.5 }}>
-            {deleteTarget?.id}
+            {deleteTarget?.employeeId}
           </Typography>
         </DialogContent>
 

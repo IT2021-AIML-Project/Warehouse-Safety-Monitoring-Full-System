@@ -10,6 +10,7 @@ import {
   LockOutlined,
 } from '@mui/icons-material';
 import '../../styles/formStyles.css';
+import { registerEmployee } from '../../services/api';
 
 const EmployeeRegister = () => {
   const [form, setForm] = useState({
@@ -46,12 +47,23 @@ const EmployeeRegister = () => {
     setErrors({ ...errors, [field]: '' });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-    setSnackbar({ open: true, message: `Employee "${form.name}" registered successfully!`, severity: 'success' });
-    setForm({ employeeId: '', name: '', email: '', password: '' });
-    setErrors({});
+    try {
+      await registerEmployee({
+        employeeId: form.employeeId,
+        name: form.name,
+        email: form.email,
+        password: form.password,
+      });
+      setSnackbar({ open: true, message: `Employee "${form.name}" registered successfully!`, severity: 'success' });
+      setForm({ employeeId: '', name: '', email: '', password: '' });
+      setErrors({});
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Failed to register employee';
+      setSnackbar({ open: true, message: msg, severity: 'error' });
+    }
   };
 
   const handleReset = () => {

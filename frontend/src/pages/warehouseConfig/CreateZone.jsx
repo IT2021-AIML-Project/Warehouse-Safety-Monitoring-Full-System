@@ -12,6 +12,7 @@ import {
   AddCircleOutline,
 } from '@mui/icons-material';
 import '../../styles/formStyles.css';
+import { createZone } from '../../services/api';
 
 const zoneTypes = [
   { value: 'Storage', label: 'Storage', desc: 'General storage space', icon: <Inventory sx={{ fontSize: 26, color: '#1d4ed8' }} />, bg: '#dbeafe', color: '#1d4ed8' },
@@ -40,12 +41,23 @@ const CreateZone = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-    setSnackbar({ open: true, message: 'Zone created successfully!', severity: 'success' });
-    setForm({ zoneId: '', zoneName: '', zoneType: '', isActive: true });
-    setErrors({});
+    try {
+      await createZone({
+        zoneId: form.zoneId,
+        zoneName: form.zoneName,
+        zoneType: form.zoneType,
+        isActive: form.isActive,
+      });
+      setSnackbar({ open: true, message: 'Zone created successfully!', severity: 'success' });
+      setForm({ zoneId: '', zoneName: '', zoneType: '', isActive: true });
+      setErrors({});
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Failed to create zone';
+      setSnackbar({ open: true, message: msg, severity: 'error' });
+    }
   };
 
   const handleReset = () => {

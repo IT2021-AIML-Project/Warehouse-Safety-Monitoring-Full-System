@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -10,6 +10,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  CircularProgress,
 } from '@mui/material';
 import {
   Shield,
@@ -18,10 +19,7 @@ import {
   LocalShipping,
   Inventory,
 } from '@mui/icons-material';
-
-// Data arrays (replace with API data)
-const dummyPPEItems = [];
-const dummyZones = [];
+import { getAllPPEItems, getPopulatedZones } from '../../services/api';
 
 // ── Helpers ─────────────────────────────────────────────────────
 const statusColorMap = {
@@ -71,13 +69,43 @@ const StatCard = ({ icon, label, value, iconBg, valueColor }) => (
 
 // ── Main ────────────────────────────────────────────────────────
 const InventoryDashboardHome = () => {
-  const totalItems = dummyPPEItems.length;
-  const inStock = dummyPPEItems.filter((i) => i.status === 'In Stock').length;
-  const lowStock = dummyPPEItems.filter((i) => i.status === 'Low Stock').length;
-  const outOfStock = dummyPPEItems.filter((i) => i.status === 'Out of Stock').length;
+  const [ppeItems, setPpeItems] = useState([]);
+  const [zones, setZones] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const recentItems = [...dummyPPEItems].slice(-5).reverse();
-  const recentZones = [...dummyZones].slice(-4).reverse();
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [itemsRes, zonesRes] = await Promise.all([
+          getAllPPEItems(),
+          getPopulatedZones(),
+        ]);
+        setPpeItems(itemsRes.data.items);
+        setZones(zonesRes.data.zones);
+      } catch (err) {
+        console.error('Failed to fetch dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const totalItems = ppeItems.length;
+  const inStock = ppeItems.filter((i) => i.status === 'In Stock').length;
+  const lowStock = ppeItems.filter((i) => i.status === 'Low Stock').length;
+  const outOfStock = ppeItems.filter((i) => i.status === 'Out of Stock').length;
+
+  const recentZones = [...zones].slice(0, 4);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 64px)' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3, minHeight: 'calc(100vh - 64px)', boxSizing: 'border-box', width: '100%' }}>
@@ -114,30 +142,36 @@ const InventoryDashboardHome = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {dummyZones.map((zone) => (
-                    <TableRow key={zone.id} sx={{ '&:hover': { backgroundColor: '#f8fafc' }, '&:last-child td': { border: 0 } }}>
-                      <TableCell sx={{ py: 2 }}>
-                        <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '15px' }}>{zone.name}</Typography>
-                        <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '13px' }}>{zone.id}</Typography>
-                      </TableCell>
-                      <TableCell sx={{ py: 2 }}>
-                        <Chip
-                          label={`${zone.employees} emp${zone.employees !== 1 ? 's' : ''}`}
-                          sx={{
-                            fontWeight: 700, fontSize: '13px', height: '28px', border: 'none',
-                            backgroundColor: zone.employees === 0 ? '#f1f5f9' : '#ede9fe',
-                            color: zone.employees === 0 ? '#94a3b8' : '#7c3aed',
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell sx={{ py: 2 }}>
-                        <Chip
-                          label={zone.status}
-                          sx={{ fontWeight: 700, fontSize: '13px', height: '28px', border: 'none', backgroundColor: '#dcfce7', color: '#16a34a' }}
-                        />
-                      </TableCell>
+                  {zones.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} align="center" sx={{ py: 6, color: '#94a3b8' }}>No zones found.</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    zones.map((zone) => (
+                      <TableRow key={zone._id} sx={{ '&:hover': { backgroundColor: '#f8fafc' }, '&:last-child td': { border: 0 } }}>
+                        <TableCell sx={{ py: 2 }}>
+                          <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '15px' }}>{zone.name}</Typography>
+                          <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '13px' }}>{zone.zoneId}</Typography>
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Chip
+                            label={`${zone.employees.length} emp${zone.employees.length !== 1 ? 's' : ''}`}
+                            sx={{
+                              fontWeight: 700, fontSize: '13px', height: '28px', border: 'none',
+                              backgroundColor: zone.employees.length === 0 ? '#f1f5f9' : '#ede9fe',
+                              color: zone.employees.length === 0 ? '#94a3b8' : '#7c3aed',
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Chip
+                            label={zone.status}
+                            sx={{ fontWeight: 700, fontSize: '13px', height: '28px', border: 'none', backgroundColor: zone.status === 'Active' ? '#dcfce7' : '#fee2e2', color: zone.status === 'Active' ? '#16a34a' : '#dc2626' }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -147,7 +181,6 @@ const InventoryDashboardHome = () => {
         {/* Zone Inventory Overview – 2×2 card grid */}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-            {/* Header */}
             <Box sx={{ px: 3, py: 2.5, borderBottom: '1px solid #e2e8f0' }}>
               <Typography variant="h6" sx={{ fontWeight: 700, color: '#1e293b', fontSize: '17px' }}>
                 Zone Inventory Overview
@@ -157,7 +190,6 @@ const InventoryDashboardHome = () => {
               </Typography>
             </Box>
 
-            {/* 2×2 Grid */}
             <Box sx={{ p: 2, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
               {recentZones.map((zone) => {
                 const name = zone.name.toLowerCase();
@@ -175,19 +207,14 @@ const InventoryDashboardHome = () => {
 
                 return (
                   <Paper
-                    key={zone.id}
+                    key={zone._id}
                     elevation={0}
                     sx={{
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '14px',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      transition: 'box-shadow 0.2s, transform 0.2s',
+                      border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden',
+                      display: 'flex', flexDirection: 'column', transition: 'box-shadow 0.2s, transform 0.2s',
                       '&:hover': { boxShadow: '0 6px 20px rgba(0,0,0,0.08)', transform: 'translateY(-2px)' },
                     }}
                   >
-                    {/* Icon + Name */}
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pt: 2.5, pb: 1.5, px: 1.5, backgroundColor: '#fff' }}>
                       <Box sx={{ width: 56, height: 56, borderRadius: '14px', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.color, mb: 1 }}>
                         <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
@@ -198,31 +225,27 @@ const InventoryDashboardHome = () => {
                         {zone.name}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '11px', letterSpacing: 0.8, mt: 0.3 }}>
-                        {zone.id}
+                        {zone.zoneId}
                       </Typography>
                     </Box>
 
-                    {/* Divider */}
                     <Box sx={{ height: '1px', backgroundColor: '#e2e8f0' }} />
 
-                    {/* Details */}
                     <Box sx={{ backgroundColor: '#f8fafc', px: 1.5, py: 1, display: 'flex', flexDirection: 'column', gap: 0.6 }}>
-                      {/* Items */}
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>Items</Typography>
                         <Chip
-                          label={`${zone.items} type${zone.items !== 1 ? 's' : ''}`}
+                          label={`${zone.items.length} type${zone.items.length !== 1 ? 's' : ''}`}
                           size="small"
                           sx={{ fontWeight: 600, fontSize: '10px', height: 18, border: 'none', backgroundColor: '#dbeafe', color: '#1d4ed8' }}
                         />
                       </Box>
-                      {/* Status */}
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>Status</Typography>
                         <Chip
                           label={zone.status}
                           size="small"
-                          sx={{ fontWeight: 600, fontSize: '10px', height: 18, border: 'none', backgroundColor: '#dcfce7', color: '#16a34a' }}
+                          sx={{ fontWeight: 600, fontSize: '10px', height: 18, border: 'none', backgroundColor: zone.status === 'Active' ? '#dcfce7' : '#fee2e2', color: zone.status === 'Active' ? '#16a34a' : '#dc2626' }}
                         />
                       </Box>
                     </Box>
@@ -232,7 +255,6 @@ const InventoryDashboardHome = () => {
             </Box>
           </Paper>
         </Box>
-
 
       </Box>
     </Box>

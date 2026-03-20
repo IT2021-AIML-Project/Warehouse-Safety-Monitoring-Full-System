@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -20,11 +20,10 @@ import {
   Button,
   MenuItem,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { Search, ViewList, Edit, Delete, WarningAmber, Close } from '@mui/icons-material';
-
-// Data array (replace with API data)
-const dummyZones = [];
+import { getAllZones as fetchZones, updateZone, deleteZone } from '../../services/api';
 
 const typeColorMap = {
   Storage: { bg: '#dbeafe', color: '#1d4ed8' },
@@ -64,22 +63,44 @@ const ZoneIcon = ({ type }) => {
 /* ══════════════════════════════════════════════════════════════════════ */
 
 const AllZones = () => {
-  const [zones, setZones] = useState(dummyZones);
+  const [zones, setZones] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ id: '', name: '', type: '', status: '' });
+  const [editForm, setEditForm] = useState({ _id: '', zoneId: '', name: '', type: '', status: '' });
   const [editErrors, setEditErrors] = useState({});
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [zoneToDelete, setZoneToDelete] = useState(null);
 
+  // Fetch zones from API
+  const loadZones = async () => {
+    try {
+      setLoading(true);
+      const res = await fetchZones();
+      setZones(res.data.zones);
+    } catch (error) {
+      console.error('Failed to fetch zones:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadZones();
+  }, []);
+
   const filtered = zones.filter(z =>
     z.name.toLowerCase().includes(search.toLowerCase()) ||
-    z.id.toLowerCase().includes(search.toLowerCase()) ||
+    z.zoneId.toLowerCase().includes(search.toLowerCase()) ||
     z.type.toLowerCase().includes(search.toLowerCase())
   );
 
   /* ── Edit ─────────────────────────────────────────────────────────── */
-  const openEdit = (zone) => { setEditForm({ id: zone.id, name: zone.name, type: zone.type, status: zone.status }); setEditErrors({}); setEditOpen(true); };
+  const openEdit = (zone) => {
+    setEditForm({ _id: zone._id, zoneId: zone.zoneId, name: zone.name, type: zone.type, status: zone.status });
+    setEditErrors({});
+    setEditOpen(true);
+  };
   const closeEdit = () => { setEditOpen(false); setEditErrors({}); };
 
   const handleEditChange = (field) => (e) => {
@@ -96,16 +117,34 @@ const AllZones = () => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!validateEdit()) return;
-    setZones(prev => prev.map(z => z.id === editForm.id ? { ...z, ...editForm } : z));
-    closeEdit();
+    try {
+      await updateZone(editForm._id, {
+        name: editForm.name,
+        type: editForm.type,
+        status: editForm.status,
+      });
+      closeEdit();
+      loadZones();
+    } catch (error) {
+      console.error('Failed to update zone:', error);
+    }
   };
 
   /* ── Delete ───────────────────────────────────────────────────────── */
   const openDelete = (zone) => { setZoneToDelete(zone); setDeleteOpen(true); };
   const closeDelete = () => { setDeleteOpen(false); setZoneToDelete(null); };
-  const handleConfirmDelete = () => { setZones(prev => prev.filter(z => z.id !== zoneToDelete.id)); closeDelete(); };
+
+  const handleConfirmDelete = async () => {
+    try {
+      await deleteZone(zoneToDelete._id);
+      closeDelete();
+      loadZones();
+    } catch (error) {
+      console.error('Failed to delete zone:', error);
+    }
+  };
 
   /* ── Render ───────────────────────────────────────────────────────── */
   return (
@@ -133,8 +172,12 @@ const AllZones = () => {
         />
       </Box>
 
-      {/* ── 4-Column Card Grid ── */}
-      {filtered.length === 0 ? (
+      {/* ── Loading ── */}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : filtered.length === 0 ? (
         <Typography sx={{ color: '#94a3b8', textAlign: 'center', py: 8 }}>No zones found.</Typography>
       ) : (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, width: '100%' }}>
@@ -142,7 +185,7 @@ const AllZones = () => {
             const c = typeColorMap[zone.type] || { bg: '#f1f5f9', color: '#64748b' };
             return (
               <Paper
-                key={zone.id}
+                key={zone._id}
                 elevation={0}
                 sx={{
                   border: '1px solid #e2e8f0',
@@ -164,7 +207,7 @@ const AllZones = () => {
                     {zone.name}
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#94a3b8', letterSpacing: 1, mt: 0.4, fontFamily: 'monospace' }}>
-                    {zone.id}
+                    {zone.zoneId}
                   </Typography>
                 </Box>
 
@@ -201,7 +244,9 @@ const AllZones = () => {
                       {/* Created */}
                       <TableRow sx={{ '& td': { borderBottom: '1px solid #e2e8f0', py: 0.9, px: 2 } }}>
                         <TableCell sx={{ color: '#64748b', fontSize: '12px', fontWeight: 600 }}>Created</TableCell>
-                        <TableCell sx={{ color: '#475569', fontSize: '12px' }}>{zone.created}</TableCell>
+                        <TableCell sx={{ color: '#475569', fontSize: '12px' }}>
+                          {new Date(zone.createdAt).toLocaleDateString()}
+                        </TableCell>
                       </TableRow>
 
                       {/* Actions */}
@@ -242,7 +287,7 @@ const AllZones = () => {
         </DialogTitle>
 
         <DialogContent sx={{ pt: 2 }}>
-          <TextField fullWidth label="Zone ID" value={editForm.id} disabled variant="outlined" margin="normal"
+          <TextField fullWidth label="Zone ID" value={editForm.zoneId} disabled variant="outlined" margin="normal"
             helperText="Zone ID cannot be changed" sx={{ mb: 1 }} />
           <TextField fullWidth label="Zone Name" value={editForm.name} onChange={handleEditChange('name')}
             error={!!editErrors.name} helperText={editErrors.name || ''} variant="outlined" margin="normal" sx={{ mb: 1 }} />
@@ -275,7 +320,7 @@ const AllZones = () => {
         <DialogContent>
           <Alert severity="error" sx={{ borderRadius: '8px', mb: 2 }}>This action cannot be undone.</Alert>
           <Typography variant="body2" sx={{ color: '#475569' }}>
-            Are you sure you want to delete <strong>{zoneToDelete?.name}</strong> ({zoneToDelete?.id})?
+            Are you sure you want to delete <strong>{zoneToDelete?.name}</strong> ({zoneToDelete?.zoneId})?
           </Typography>
         </DialogContent>
 

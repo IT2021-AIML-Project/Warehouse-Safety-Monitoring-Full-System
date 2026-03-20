@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   Typography,
@@ -59,16 +59,46 @@ const NotificationReportingDashboard = () => {
   const [sentNotifications, setSentNotifications] = useState([]);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
+  // Fetch sent notifications from API on mount
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const { getAllNotifications } = await import('../../services/api');
+        const res = await getAllNotifications();
+        setSentNotifications(res.data.notifications || []);
+      } catch (err) {
+        console.error('Failed to load notifications:', err);
+      }
+    };
+    fetchNotifications();
+  }, []);
+
   const handleNotificationSent = (notification) => {
     setSentNotifications((prev) => [notification, ...prev]);
   };
 
-  const handleDeleteNotification = (id) => {
-    setSentNotifications((prev) => prev.filter((n) => n.id !== id));
+  const handleDeleteNotification = async (id) => {
+    try {
+      const { deleteNotification } = await import('../../services/api');
+      await deleteNotification(id);
+      setSentNotifications((prev) => prev.filter((n) => n.id !== id));
+    } catch (err) {
+      console.error('Delete notification error:', err);
+    }
   };
 
-  const handleEditNotification = (updated) => {
-    setSentNotifications((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+  const handleEditNotification = async (updated) => {
+    try {
+      const { updateNotification } = await import('../../services/api');
+      await updateNotification(updated.id, {
+        title: updated.title,
+        message: updated.message,
+        severity: updated.severity,
+      });
+      setSentNotifications((prev) => prev.map((n) => (n.id === updated.id ? { ...n, ...updated } : n)));
+    } catch (err) {
+      console.error('Edit notification error:', err);
+    }
   };
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });

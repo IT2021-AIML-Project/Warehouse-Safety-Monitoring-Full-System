@@ -43,7 +43,6 @@ import {
   Refresh,
 } from '@mui/icons-material';
 
-const LS_KEY = 'wsms_employee_feedbacks';
 
 // ── Categories ─────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -68,37 +67,52 @@ const getFileIcon  = (type) => { if (type === 'application/pdf') return PictureA
 const getFileColor = (type) => { if (type === 'application/pdf') return { color: '#dc2626', bg: '#fff1f2', border: '#fecaca' }; if (type?.startsWith('image/')) return { color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' }; return { color: '#0f766e', bg: '#f0fdfa', border: '#5eead4' }; };
 const formatBytes  = (b) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
 
-const loadAll  = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; } };
-const saveAll  = (arr) => localStorage.setItem(LS_KEY, JSON.stringify(arr));
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 const EmployeeFeedbacksView = () => {
   const [feedbacks, setFeedbacks]   = useState([]);
-  const [filterCat, setFilterCat]   = useState(null);   // category key | null
-  const [filterSt,  setFilterSt]    = useState(null);   // status key   | null
+  const [filterCat, setFilterCat]   = useState(null);
+  const [filterSt,  setFilterSt]    = useState(null);
   const [searchQ,   setSearchQ]     = useState('');
   const [viewTarget, setViewTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const refresh = useCallback(() => setFeedbacks(loadAll()), []);
+  const refresh = useCallback(async () => {
+    try {
+      const { getAllFeedbacks } = await import('../../services/api');
+      const res = await getAllFeedbacks();
+      setFeedbacks(res.data.feedbacks || []);
+    } catch (err) {
+      console.error('Failed to load feedbacks:', err);
+    }
+  }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   // ── Status update ──
-  const setStatus = (id, status) => {
-    const updated = feedbacks.map((f) => f.id === id ? { ...f, status } : f);
-    setFeedbacks(updated);
-    saveAll(updated);
-    if (viewTarget?.id === id) setViewTarget((v) => ({ ...v, status }));
+  const setStatus = async (id, status) => {
+    try {
+      const { updateFeedbackStatus } = await import('../../services/api');
+      await updateFeedbackStatus(id, status);
+      setFeedbacks((prev) => prev.map((f) => f.id === id ? { ...f, status } : f));
+      if (viewTarget?.id === id) setViewTarget((v) => ({ ...v, status }));
+    } catch (err) {
+      console.error('Update status error:', err);
+    }
   };
 
   // ── Delete ──
-  const confirmDelete = () => {
-    const updated = feedbacks.filter((f) => f.id !== deleteTarget.id);
-    setFeedbacks(updated);
-    saveAll(updated);
-    setDeleteTarget(null);
-    if (viewTarget?.id === deleteTarget.id) setViewTarget(null);
+  const confirmDelete = async () => {
+    try {
+      const { deleteFeedback } = await import('../../services/api');
+      await deleteFeedback(deleteTarget.id);
+      setFeedbacks((prev) => prev.filter((f) => f.id !== deleteTarget.id));
+      if (viewTarget?.id === deleteTarget.id) setViewTarget(null);
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error('Delete feedback error:', err);
+    }
   };
 
   // ── Filtered list ──

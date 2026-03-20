@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -16,6 +16,7 @@ import {
   Alert,
   Avatar,
   Checkbox,
+  CircularProgress,
 } from '@mui/material';
 import {
   Search,
@@ -36,9 +37,14 @@ import {
   Inventory2,
   Lock,
 } from '@mui/icons-material';
-
-// Data arrays (replace with API data)
-const registeredEmployees = [];
+import {
+  getPopulatedZones,
+  getAllEmployees,
+  updatePPEItem,
+  deletePPEItem,
+  bulkAssignEmployees,
+  removeAssignmentByZoneEmployee,
+} from '../../services/api';
 
 const statusColorMap = {
   'In Stock': { bg: '#dcfce7', color: '#16a34a' },
@@ -51,8 +57,10 @@ const avatarColor = (name) => {
   return colors[name.charCodeAt(0) % colors.length];
 };
 
+// ══════════════════════════════════════════════════════════════
 // Zone Detail View
-const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
+// ══════════════════════════════════════════════════════════════
+const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [editQty, setEditQty] = useState('');
@@ -65,27 +73,70 @@ const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
   const [removeEmpOpen, setRemoveEmpOpen] = useState(false);
   const [removeEmpTarget, setRemoveEmpTarget] = useState(null);
 
+  // ── Edit PPE quantity ──
   const openEdit = (item) => { setEditTarget(item); setEditQty(String(item.quantity)); setEditError(''); setEditOpen(true); };
   const closeEdit = () => { setEditOpen(false); setEditTarget(null); setEditError(''); };
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     const qty = parseInt(editQty, 10);
     if (isNaN(qty) || qty < 0) { setEditError('Enter a valid quantity (0 or more).'); return; }
-    onZoneChange({ ...zone, items: zone.items.map((i) => i.id !== editTarget.id ? i : { ...i, quantity: qty, status: qty === 0 ? 'Out of Stock' : qty <= 15 ? 'Low Stock' : 'In Stock' }) });
-    closeEdit();
+    try {
+      await updatePPEItem(editTarget._id, { quantity: qty });
+      closeEdit();
+      onRefresh();
+    } catch (err) {
+      setEditError(err.response?.data?.message || 'Failed to update');
+    }
   };
 
+  // ── Delete PPE item ──
   const openDelete = (item) => { setDeleteTarget(item); setDeleteOpen(true); };
   const closeDelete = () => { setDeleteOpen(false); setDeleteTarget(null); };
-  const handleDeleteConfirm = () => { onZoneChange({ ...zone, items: zone.items.filter((i) => i.id !== deleteTarget.id) }); closeDelete(); };
+  const handleDeleteConfirm = async () => {
+    try {
+      await deletePPEItem(deleteTarget._id);
+      closeDelete();
+      onRefresh();
+    } catch (err) {
+      console.error('Delete item error:', err);
+    }
+  };
 
-  const availableToAdd = registeredEmployees.filter((emp) => !zone.employees.some((e) => e.id === emp.id));
-  const filteredEmps = availableToAdd.filter((emp) => emp.name.toLowerCase().includes(empSearch.toLowerCase()) || emp.id.toLowerCase().includes(empSearch.toLowerCase()));
-  const toggleSelect = (emp) => setSelected((prev) => prev.some((e) => e.id === emp.id) ? prev.filter((e) => e.id !== emp.id) : [...prev, emp]);
-  const handleAddEmployees = () => { onZoneChange({ ...zone, employees: [...zone.employees, ...selected] }); setSelected([]); setEmpSearch(''); setAddEmpOpen(false); };
+  // ── Add employees ──
+  const availableToAdd = allEmployees.filter((emp) => !zone.employees.some((e) => e._id === emp._id));
+  const filteredEmps = availableToAdd.filter((emp) =>
+    emp.name.toLowerCase().includes(empSearch.toLowerCase()) ||
+    emp.employeeId.toLowerCase().includes(empSearch.toLowerCase())
+  );
+  const toggleSelect = (emp) =>
+    setSelected((prev) => prev.some((e) => e._id === emp._id) ? prev.filter((e) => e._id !== emp._id) : [...prev, emp]);
 
+  const handleAddEmployees = async () => {
+    try {
+      await bulkAssignEmployees({
+        zone: zone._id,
+        employees: selected.map((e) => e._id),
+      });
+      setSelected([]);
+      setEmpSearch('');
+      setAddEmpOpen(false);
+      onRefresh();
+    } catch (err) {
+      console.error('Assign employees error:', err);
+    }
+  };
+
+  // ── Remove employee ──
   const openRemoveEmp = (emp) => { setRemoveEmpTarget(emp); setRemoveEmpOpen(true); };
   const closeRemoveEmp = () => { setRemoveEmpOpen(false); setRemoveEmpTarget(null); };
-  const handleRemoveEmp = () => { onZoneChange({ ...zone, employees: zone.employees.filter((e) => e.id !== removeEmpTarget.id) }); closeRemoveEmp(); };
+  const handleRemoveEmp = async () => {
+    try {
+      await removeAssignmentByZoneEmployee(zone._id, removeEmpTarget._id);
+      closeRemoveEmp();
+      onRefresh();
+    } catch (err) {
+      console.error('Remove employee error:', err);
+    }
+  };
 
   return (
     <Box sx={{ p: 4 }}>
@@ -96,12 +147,12 @@ const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
         </IconButton>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700, color: '#1e293b', lineHeight: 1.2 }}>{zone.name}</Typography>
-          <Typography variant="body2" sx={{ color: '#94a3b8', fontFamily: 'monospace' }}>{zone.id}</Typography>
+          <Typography variant="body2" sx={{ color: '#94a3b8', fontFamily: 'monospace' }}>{zone.zoneId}</Typography>
         </Box>
-        <Chip label={zone.status} sx={{ ml: 1, fontWeight: 600, fontSize: '12px', backgroundColor: '#dcfce7', color: '#16a34a', border: 'none' }} />
+        <Chip label={zone.status} sx={{ ml: 1, fontWeight: 600, fontSize: '12px', backgroundColor: zone.status === 'Active' ? '#dcfce7' : '#fee2e2', color: zone.status === 'Active' ? '#16a34a' : '#dc2626', border: 'none' }} />
       </Box>
 
-      {/* PPE Items Section — card grid */}
+      {/* PPE Items Section */}
       <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '14px', mb: 3, overflow: 'hidden' }}>
         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
           <Inventory sx={{ color: '#3b82f6', fontSize: 20 }} />
@@ -120,64 +171,21 @@ const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
               const isHead = item.category.toLowerCase().includes('head');
               const isFoot = item.category.toLowerCase().includes('foot');
               const isBody = item.category.toLowerCase().includes('body');
-              const ct = isHead
-                ? { bg: '#dbeafe', iconColor: '#1d4ed8' }
-                : isFoot
-                  ? { bg: '#fef9c3', iconColor: '#a16207' }
-                  : isBody
-                    ? { bg: '#dcfce7', iconColor: '#16a34a' }
-                    : { bg: '#f1f5f9', iconColor: '#64748b' };
+              const ct = isHead ? { bg: '#dbeafe', iconColor: '#1d4ed8' } : isFoot ? { bg: '#fef9c3', iconColor: '#a16207' } : isBody ? { bg: '#dcfce7', iconColor: '#16a34a' } : { bg: '#f1f5f9', iconColor: '#64748b' };
               const categoryEmoji = isHead ? '🪖' : isFoot ? '🥾' : isBody ? '🦺' : '📦';
               return (
-                <Paper
-                  key={item.id}
-                  elevation={0}
-                  sx={{
-                    border: '1.5px solid #e2e8f0',
-                    borderRadius: '16px',
-                    p: 2.5,
-                    width: 200,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    textAlign: 'center',
-                    gap: 0.8,
-                    transition: 'all 0.15s',
-                    '&:hover': { borderColor: ct.iconColor, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', transform: 'translateY(-2px)' },
-                  }}
-                >
-                  {/* Icon box */}
-                  <Box sx={{ width: 58, height: 58, borderRadius: '14px', backgroundColor: ct.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.5, fontSize: 28 }}>
-                    {categoryEmoji}
-                  </Box>
-
-                  {/* Name */}
+                <Paper key={item._id} elevation={0} sx={{ border: '1.5px solid #e2e8f0', borderRadius: '16px', p: 2.5, width: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 0.8, transition: 'all 0.15s', '&:hover': { borderColor: ct.iconColor, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', transform: 'translateY(-2px)' } }}>
+                  <Box sx={{ width: 58, height: 58, borderRadius: '14px', backgroundColor: ct.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.5, fontSize: 28 }}>{categoryEmoji}</Box>
                   <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '15px', lineHeight: 1.3 }}>{item.name}</Typography>
-
-                  {/* ID */}
                   <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '11px' }}>{item.id}</Typography>
-
-                  {/* Category */}
                   <Typography sx={{ color: '#64748b', fontSize: '12px' }}>{item.category}</Typography>
-
-                  {/* Qty + Status */}
                   <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap', justifyContent: 'center', mt: 0.5 }}>
                     <Chip label={`Qty: ${item.quantity}`} sx={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#f1f5f9', color: '#334155', border: 'none', height: 24 }} />
                     <Chip label={item.status} sx={{ fontSize: '11px', fontWeight: 600, border: 'none', height: 24, backgroundColor: statusColorMap[item.status]?.bg, color: statusColorMap[item.status]?.color }} />
                   </Box>
-
-                  {/* Actions */}
                   <Box sx={{ display: 'flex', gap: 0.8, mt: 0.5 }}>
-                    <Tooltip title="Edit Quantity">
-                      <IconButton size="small" sx={{ color: '#3b82f6', border: '1px solid #dbeafe', borderRadius: '8px', p: '5px' }} onClick={() => openEdit(item)}>
-                        <Edit sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Remove Item">
-                      <IconButton size="small" sx={{ color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '8px', p: '5px' }} onClick={() => openDelete(item)}>
-                        <Delete sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Tooltip>
+                    <Tooltip title="Edit Quantity"><IconButton size="small" sx={{ color: '#3b82f6', border: '1px solid #dbeafe', borderRadius: '8px', p: '5px' }} onClick={() => openEdit(item)}><Edit sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                    <Tooltip title="Remove Item"><IconButton size="small" sx={{ color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '8px', p: '5px' }} onClick={() => openDelete(item)}><Delete sx={{ fontSize: 16 }} /></IconButton></Tooltip>
                   </Box>
                 </Paper>
               );
@@ -206,7 +214,7 @@ const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
         ) : (
           <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
             {zone.employees.map((emp) => (
-              <Box key={emp.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, border: '1px solid #e2e8f0', borderRadius: '10px', px: 2, py: 1.2, backgroundColor: '#fafafa', minWidth: 200 }}>
+              <Box key={emp._id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, border: '1px solid #e2e8f0', borderRadius: '10px', px: 2, py: 1.2, backgroundColor: '#fafafa', minWidth: 200 }}>
                 <Avatar sx={{ width: 34, height: 34, fontSize: '14px', fontWeight: 700, backgroundColor: avatarColor(emp.name) }}>{emp.name.charAt(0)}</Avatar>
                 <Box sx={{ flex: 1 }}>
                   <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '14px' }}>{emp.name}</Typography>
@@ -273,14 +281,14 @@ const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {filteredEmps.map((emp) => {
-                const isSelected = selected.some((e) => e.id === emp.id);
+                const isSelected = selected.some((e) => e._id === emp._id);
                 return (
-                  <Box key={emp.id} onClick={() => toggleSelect(emp)}
+                  <Box key={emp._id} onClick={() => toggleSelect(emp)}
                     sx={{ display: 'flex', alignItems: 'center', gap: 1.5, border: `1.5px solid ${isSelected ? '#7c3aed' : '#e2e8f0'}`, borderRadius: '10px', px: 2, py: 1.5, cursor: 'pointer', backgroundColor: isSelected ? '#faf5ff' : '#fff', transition: 'all 0.15s', '&:hover': { borderColor: '#7c3aed', backgroundColor: '#faf5ff' } }}>
                     <Avatar sx={{ width: 36, height: 36, fontSize: '14px', fontWeight: 700, backgroundColor: avatarColor(emp.name) }}>{emp.name.charAt(0)}</Avatar>
                     <Box sx={{ flex: 1 }}>
                       <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '14px' }}>{emp.name}</Typography>
-                      <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '12px' }}>{emp.id}</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '12px' }}>{emp.employeeId}</Typography>
                     </Box>
                     <Checkbox checked={isSelected} onChange={() => toggleSelect(emp)} onClick={(e) => e.stopPropagation()} sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#7c3aed' } }} />
                   </Box>
@@ -314,7 +322,9 @@ const ZoneDetail = ({ zone, onBack, onZoneChange }) => {
   );
 };
 
-// Zone card colour palette (cycles through zones)
+// ══════════════════════════════════════════════════════════════
+// Zone card colour palette
+// ══════════════════════════════════════════════════════════════
 const zoneThemes = [
   { bg: '#eff6ff', iconBg: '#dbeafe', iconColor: '#1d4ed8' },
   { bg: '#fefce8', iconBg: '#fef9c3', iconColor: '#a16207' },
@@ -322,25 +332,62 @@ const zoneThemes = [
   { bg: '#f0fdf4', iconBg: '#dcfce7', iconColor: '#16a34a' },
 ];
 
+// ══════════════════════════════════════════════════════════════
 // Zone List View
+// ══════════════════════════════════════════════════════════════
 const CurrentZones = () => {
   const [zones, setZones] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [selectedZone, setSelectedZone] = useState(null);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const handleZoneChange = (updatedZone) => {
-    setZones((prev) => prev.map((z) => (z.id === updatedZone.id ? updatedZone : z)));
-    setSelectedZone(updatedZone);
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [zonesRes, empsRes] = await Promise.all([
+        getPopulatedZones(),
+        getAllEmployees(),
+      ]);
+      setZones(zonesRes.data.zones);
+      setEmployees(empsRes.data.employees);
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleRefresh = async () => {
+    await loadData();
+    // keep selected zone in sync
+    if (selectedZone) {
+      const res = await getPopulatedZones();
+      const updated = res.data.zones.find(z => z._id === selectedZone._id);
+      if (updated) setSelectedZone(updated);
+      else setSelectedZone(null);
+    }
   };
 
   if (selectedZone) {
-    const liveZone = zones.find((z) => z.id === selectedZone.id) || selectedZone;
-    return <ZoneDetail zone={liveZone} onBack={() => setSelectedZone(null)} onZoneChange={handleZoneChange} />;
+    const liveZone = zones.find((z) => z._id === selectedZone._id) || selectedZone;
+    return (
+      <ZoneDetail
+        zone={liveZone}
+        onBack={() => setSelectedZone(null)}
+        onRefresh={handleRefresh}
+        allEmployees={employees}
+      />
+    );
   }
 
   const filteredZones = zones.filter((z) =>
     z.name.toLowerCase().includes(search.toLowerCase()) ||
-    z.id.toLowerCase().includes(search.toLowerCase())
+    z.zoneId.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -354,88 +401,52 @@ const CurrentZones = () => {
           sx={{ width: 300, '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: '14px' } }} />
       </Box>
 
-      {/* Card grid */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 3 }}>
-        {filteredZones.map((zone, idx) => {
-          const theme = zoneThemes[idx % zoneThemes.length];
-          const name = zone.name.toLowerCase();
-          const ZoneIcon =
-            name.includes('storage') || name.includes('block') ? Warehouse :
-              name.includes('loading') || name.includes('dock') ? LocalShipping :
-                name.includes('pack') ? Inventory2 :
-                  name.includes('restricted') || name.includes('area') ? Lock :
-                    Inventory;
-          return (
-            <Paper
-              key={zone.id}
-              elevation={0}
-              onClick={() => setSelectedZone(zone)}
-              sx={{
-                border: '1.5px solid #e2e8f0',
-                borderRadius: '20px',
-                p: 4,
-                cursor: 'pointer',
-                textAlign: 'center',
-                transition: 'all 0.18s',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 1.5,
-                '&:hover': {
-                  borderColor: theme.iconColor,
-                  backgroundColor: theme.bg,
-                  boxShadow: `0 6px 24px rgba(0,0,0,0.10)`,
-                  transform: 'translateY(-3px)',
-                },
-              }}
-            >
-              {/* Icon box */}
-              <Box sx={{
-                width: 72, height: 72,
-                borderRadius: '18px',
-                backgroundColor: theme.iconBg,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                mb: 1,
-              }}>
-                <ZoneIcon sx={{ fontSize: 36, color: theme.iconColor }} />
-              </Box>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>
+      ) : (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 3 }}>
+          {filteredZones.map((zone, idx) => {
+            const theme = zoneThemes[idx % zoneThemes.length];
+            const name = zone.name.toLowerCase();
+            const ZoneIcon =
+              name.includes('storage') || name.includes('block') ? Warehouse :
+                name.includes('loading') || name.includes('dock') ? LocalShipping :
+                  name.includes('pack') ? Inventory2 :
+                    name.includes('restricted') || name.includes('area') ? Lock :
+                      Inventory;
+            return (
+              <Paper
+                key={zone._id}
+                elevation={0}
+                onClick={() => setSelectedZone(zone)}
+                sx={{
+                  border: '1.5px solid #e2e8f0', borderRadius: '20px', p: 4, cursor: 'pointer',
+                  textAlign: 'center', transition: 'all 0.18s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5,
+                  '&:hover': { borderColor: theme.iconColor, backgroundColor: theme.bg, boxShadow: '0 6px 24px rgba(0,0,0,0.10)', transform: 'translateY(-3px)' },
+                }}
+              >
+                <Box sx={{ width: 72, height: 72, borderRadius: '18px', backgroundColor: theme.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
+                  <ZoneIcon sx={{ fontSize: 36, color: theme.iconColor }} />
+                </Box>
+                <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '17px', lineHeight: 1.3 }}>{zone.name}</Typography>
+                <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '13px' }}>{zone.zoneId}</Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'center', mt: 0.5 }}>
+                  <Chip label={`${zone.items.length} item${zone.items.length !== 1 ? 's' : ''}`} sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none' }} />
+                  <Chip label={`${zone.employees.length} emp${zone.employees.length !== 1 ? 's' : ''}`} sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: '#f3e8ff', color: '#7c3aed', border: 'none' }} />
+                  <Chip label={zone.status} sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: zone.status === 'Active' ? '#dcfce7' : '#fee2e2', color: zone.status === 'Active' ? '#16a34a' : '#dc2626', border: 'none' }} />
+                </Box>
+              </Paper>
+            );
+          })}
 
-              {/* Zone name */}
-              <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '17px', lineHeight: 1.3 }}>
-                {zone.name}
-              </Typography>
-
-              {/* Zone ID */}
-              <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '13px' }}>
-                {zone.id}
-              </Typography>
-
-              {/* Stats row */}
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'center', mt: 0.5 }}>
-                <Chip
-                  label={`${zone.items.length} item${zone.items.length !== 1 ? 's' : ''}`}
-                  sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none' }}
-                />
-                <Chip
-                  label={`${zone.employees.length} emp${zone.employees.length !== 1 ? 's' : ''}`}
-                  sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: '#f3e8ff', color: '#7c3aed', border: 'none' }}
-                />
-                <Chip
-                  label={zone.status}
-                  sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: '#dcfce7', color: '#16a34a', border: 'none' }}
-                />
-              </Box>
-            </Paper>
-          );
-        })}
-
-        {filteredZones.length === 0 && (
-          <Box sx={{ gridColumn: '1 / -1', py: 6, textAlign: 'center', color: '#94a3b8' }}>
-            <Inventory sx={{ fontSize: 48, mb: 1, opacity: 0.3 }} />
-            <Typography variant="body2">No zones found.</Typography>
-          </Box>
-        )}
-      </Box>
+          {filteredZones.length === 0 && (
+            <Box sx={{ gridColumn: '1 / -1', py: 6, textAlign: 'center', color: '#94a3b8' }}>
+              <Inventory sx={{ fontSize: 48, mb: 1, opacity: 0.3 }} />
+              <Typography variant="body2">No zones found.</Typography>
+            </Box>
+          )}
+        </Box>
+      )}
     </Box>
   );
 };

@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Employee = require('../models/Employee');
 
 // Register new user
 exports.register = async (req, res) => {
@@ -61,7 +62,7 @@ exports.register = async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
-    
+
     // Handle validation errors
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
@@ -93,43 +94,83 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Find user by username
+    // 1. Try admin User collection first
     const user = await User.findOne({ username });
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid username or password'
+    if (user) {
+      // Check password (direct comparison since no hashing)
+      if (user.password !== password) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid username or password'
+        });
+      }
+
+      // Update last login
+      user.lastLogin = new Date();
+      await user.save();
+
+      // Return user data (excluding password)
+      const userResponse = {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        dashboardType: user.dashboardType,
+        lastLogin: user.lastLogin
+      };
+
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        user: userResponse
       });
     }
 
-    // Check password (direct comparison since no hashing)
-    if (user.password !== password) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid username or password'
+    // 2. Try Employee collection (login by employeeId)
+    const employee = await Employee.findOne({ employeeId: username });
+
+    if (employee) {
+      // Check if employee is active
+      if (employee.status !== 'Active') {
+        return res.status(401).json({
+          success: false,
+          message: 'Your account has been deactivated. Please contact your administrator.'
+        });
+      }
+
+      // Check password
+      if (employee.password !== password) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid username or password'
+        });
+      }
+
+      // Return employee data with role 'user' for EmployeeManagementDashboard
+      const employeeResponse = {
+        id: employee._id,
+        username: employee.employeeId,
+        employeeId: employee.employeeId,
+        email: employee.email,
+        fullName: employee.name,
+        role: 'user',
+        dashboardType: 'Employee Dashboard',
+        lastLogin: new Date()
+      };
+
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        user: employeeResponse
       });
     }
 
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
-
-    // Return user data (excluding password)
-    const userResponse = {
-      id: user._id,
-      username: user.username,
-      email: user.email,
-      fullName: user.fullName,
-      role: user.role,
-      dashboardType: user.dashboardType,
-      lastLogin: user.lastLogin
-    };
-
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      user: userResponse
+    // 3. No match found in either collection
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid username or password'
     });
 
   } catch (error) {
@@ -146,7 +187,7 @@ exports.login = async (req, res) => {
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find({}, '-password'); // Exclude password field
-    
+
     res.status(200).json({
       success: true,
       count: users.length,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -6,6 +6,7 @@ import {
   Chip,
   Divider,
   Button,
+  CircularProgress,
 } from '@mui/material';
 import {
   LocationOn,
@@ -19,10 +20,10 @@ import {
   QrCode2,
   CalendarToday,
   VerifiedUser,
+  Inventory2Outlined,
 } from '@mui/icons-material';
-
-// Assigned zones data (replace with API data)
-const myZones = [];
+import { useAuth } from '../../context/AuthContext';
+import { getMyAssignedZones } from '../../services/api';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const statusColorMap = {
@@ -58,13 +59,52 @@ const guidelines = [
 
 //  Component 
 const EmployeeDashboardHome = ({ onGoToInquiries }) => {
+  const { user } = useAuth();
+  const [zones, setZones] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchZones = async () => {
+      if (!user?.id) { setLoading(false); return; }
+      try {
+        const res = await getMyAssignedZones(user.id);
+        setZones(res.data.zones || []);
+      } catch (err) {
+        console.error('Failed to load assigned zones:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchZones();
+  }, [user?.id]);
+
   return (
     <Box sx={{ maxWidth: '1400px', mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
       <Box sx={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
 
         {/*  LEFT: Zone + PPE cards  */}
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {myZones.map((zone) => (
+
+          {/* Loading state */}
+          {loading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 10 }}>
+              <CircularProgress sx={{ color: '#1d4ed8' }} />
+            </Box>
+          )}
+
+          {/* Empty state */}
+          {!loading && zones.length === 0 && (
+            <Paper elevation={0} sx={{ border: '1.5px dashed #cbd5e1', borderRadius: '16px', p: 5, textAlign: 'center', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}>
+              <Box sx={{ width: 64, height: 64, borderRadius: '16px', background: 'linear-gradient(135deg, #dbeafe, #eff6ff)', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2 }}>
+                <Inventory2Outlined sx={{ fontSize: 32, color: '#1d4ed8' }} />
+              </Box>
+              <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '18px', mb: 0.5 }}>No Zones Assigned Yet</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: '14px' }}>You haven't been assigned to any warehouse zones. Contact your supervisor for zone assignment.</Typography>
+            </Paper>
+          )}
+
+          {/* Zone cards */}
+          {!loading && zones.map((zone) => (
             <Paper key={zone.id} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden' }}>
               {/* Zone header */}
               <Box sx={{ px: 3, py: 2.5, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1.5, background: 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)' }}>

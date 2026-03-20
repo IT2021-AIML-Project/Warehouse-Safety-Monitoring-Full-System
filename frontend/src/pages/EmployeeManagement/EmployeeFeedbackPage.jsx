@@ -37,7 +37,6 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
-const LS_KEY = 'wsms_employee_feedbacks';
 
 // ── Categories ────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -59,10 +58,6 @@ const getFileIcon  = (type) => { if (type === 'application/pdf') return PictureA
 const getFileColor = (type) => { if (type === 'application/pdf') return { color: '#dc2626', bg: '#fff1f2', border: '#fecaca' }; if (type?.startsWith('image/')) return { color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' }; return { color: '#0f766e', bg: '#f0fdfa', border: '#5eead4' }; };
 const formatBytes  = (b) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
 
-// ── Load / save helpers ───────────────────────────────────────────────────────
-const loadFeedbacks = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; } };
-const saveFeedbacks = (arr) => localStorage.setItem(LS_KEY, JSON.stringify(arr));
-
 const initForm = { category: 'general', rating: 0, title: '', message: '', anonymous: false };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,11 +74,19 @@ const EmployeeFeedbackPage = () => {
   const [history, setHistory]         = useState([]);
   const fileInputRef                  = useRef(null);
 
-  // Load history from localStorage on mount
+  // Load history from API on mount
   useEffect(() => {
-    const all = loadFeedbacks();
-    const mine = all.filter((f) => f.submittedBy === (user?.username || user?.email || 'employee'));
-    setHistory(mine);
+    const fetchHistory = async () => {
+      if (!user?.id) return;
+      try {
+        const { getEmployeeFeedbacks } = await import('../../services/api');
+        const res = await getEmployeeFeedbacks(user.id);
+        setHistory(res.data.feedbacks || []);
+      } catch (err) {
+        console.error('Failed to load feedback history:', err);
+      }
+    };
+    fetchHistory();
   }, [user]);
 
   // ── File processing ──
@@ -112,32 +115,34 @@ const EmployeeFeedbackPage = () => {
   };
 
   // ── Submit ──
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
-    const feedback = {
-      id: Date.now(),
-      category: form.category,
-      rating: form.rating,
-      title: form.title.trim(),
-      message: form.message.trim(),
-      anonymous: form.anonymous,
-      submittedBy: user?.username || user?.email || 'employee',
-      submittedByName: form.anonymous ? 'Anonymous' : (user?.fullName || user?.username || 'Employee'),
-      time: new Date().toLocaleString(),
-      status: 'new',
-      attachments: attachments.map(({ id, name, size, type }) => ({ id, name, size, type })),
-    };
-    const all = loadFeedbacks();
-    const updated = [feedback, ...all];
-    saveFeedbacks(updated);
-    const mine = updated.filter((f) => f.submittedBy === feedback.submittedBy);
-    setHistory(mine);
-    setSuccessMsg('Your feedback has been submitted successfully! The admin team will review it shortly.');
-    setForm(initForm);
-    setAttachments([]);
-    setAttachError('');
-    setErrors({});
-    setTimeout(() => setSuccessMsg(''), 6000);
+    try {
+      const { createFeedback } = await import('../../services/api');
+      const payload = {
+        category: form.category,
+        rating: form.rating,
+        title: form.title.trim(),
+        message: form.message.trim(),
+        anonymous: form.anonymous,
+        submittedBy: user?.id || null,
+        submittedByName: form.anonymous ? 'Anonymous' : (user?.fullName || user?.username || 'Employee'),
+        attachments: attachments.map(({ name, size, type }) => ({ name, size, type })),
+      };
+
+      const res = await createFeedback(payload);
+      const saved = res.data.feedback;
+      setHistory((prev) => [saved, ...prev]);
+      setSuccessMsg('Your feedback has been submitted successfully! The admin team will review it shortly.');
+      setForm(initForm);
+      setAttachments([]);
+      setAttachError('');
+      setErrors({});
+      setTimeout(() => setSuccessMsg(''), 6000);
+    } catch (err) {
+      console.error('Submit feedback error:', err);
+      setErrors({ submit: err.response?.data?.message || 'Failed to submit feedback' });
+    }
   };
 
   const cat = catOf(form.category);

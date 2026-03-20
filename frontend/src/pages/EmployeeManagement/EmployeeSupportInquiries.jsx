@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -16,6 +16,7 @@ import {
   AccordionDetails,
   IconButton,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import {
   HeadsetMic,
@@ -29,9 +30,8 @@ import {
   EditOutlined,
   DeleteOutline,
 } from '@mui/icons-material';
-
-// Inquiries data (replace with API data)
-const sampleInquiries = [];
+import { useAuth } from '../../context/AuthContext';
+import { createInquiry, getMyInquiries, updateInquiry, deleteInquiry } from '../../services/api';
 
 const faqs = [
   { q: 'How do I request replacement PPE?', a: 'Submit a new inquiry under the "Equipment" category. Your supervisor will be notified and process the request within 24 hours.' },
@@ -51,15 +51,35 @@ const categories = ['Equipment', 'Access', 'Training', 'Safety', 'Incident', 'Ot
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const EmployeeSupportInquiries = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('inquiries');
   const [newOpen, setNewOpen] = useState(false);
   const [form, setForm] = useState({ subject: '', category: categories[0], message: '' });
-  const [inquiries, setInquiries] = useState(sampleInquiries);
+  const [inquiries, setInquiries] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Edit state
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [editForm, setEditForm] = useState({ subject: '', category: categories[0], message: '' });
+
+  // Fetch inquiries from backend
+  const loadInquiries = async () => {
+    try {
+      setLoading(true);
+      const empId = user?.employeeId || user?.username;
+      const res = await getMyInquiries(empId);
+      setInquiries(res.data.inquiries);
+    } catch (error) {
+      console.error('Failed to fetch inquiries:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInquiries();
+  }, []);
 
   const handleOpenEdit = (inq) => {
     setEditTarget(inq);
@@ -67,37 +87,48 @@ const EmployeeSupportInquiries = () => {
     setEditOpen(true);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!editForm.subject.trim() || !editForm.message.trim()) return;
-    setInquiries((prev) =>
-      prev.map((inq) =>
-        inq.id === editTarget.id
-          ? { ...inq, subject: editForm.subject, category: editForm.category, message: editForm.message }
-          : inq
-      )
-    );
-    setEditOpen(false);
-    setEditTarget(null);
+    try {
+      await updateInquiry(editTarget._id, {
+        subject: editForm.subject,
+        category: editForm.category,
+        message: editForm.message,
+      });
+      setEditOpen(false);
+      setEditTarget(null);
+      loadInquiries();
+    } catch (error) {
+      console.error('Failed to update inquiry:', error);
+    }
   };
 
-  const handleDelete = (id) => {
-    setInquiries((prev) => prev.filter((inq) => inq.id !== id));
+  const handleDelete = async (id) => {
+    try {
+      await deleteInquiry(id);
+      loadInquiries();
+    } catch (error) {
+      console.error('Failed to delete inquiry:', error);
+    }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.subject.trim() || !form.message.trim()) return;
-    const newInq = {
-      id: `INQ-${String(inquiries.length + 1).padStart(3, '0')}`,
-      subject: form.subject,
-      category: form.category,
-      status: 'Open',
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      message: form.message,
-    };
-    setInquiries([newInq, ...inquiries]);
-    setForm({ subject: '', category: categories[0], message: '' });
-    setNewOpen(false);
-    setActiveTab('inquiries');
+    try {
+      await createInquiry({
+        subject: form.subject,
+        category: form.category,
+        message: form.message,
+        submittedBy: user?.fullName || user?.username || 'Employee',
+        employeeId: user?.employeeId || user?.username,
+      });
+      setForm({ subject: '', category: categories[0], message: '' });
+      setNewOpen(false);
+      setActiveTab('inquiries');
+      loadInquiries();
+    } catch (error) {
+      console.error('Failed to create inquiry:', error);
+    }
   };
 
   return (
@@ -169,7 +200,11 @@ const EmployeeSupportInquiries = () => {
             <Chip label={`${inquiries.length} total`} sx={{ fontWeight: 600, backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none' }} />
           </Box>
 
-          {inquiries.length === 0 ? (
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+              <CircularProgress />
+            </Box>
+          ) : inquiries.length === 0 ? (
             <Paper elevation={0} sx={{ border: '1px dashed #e2e8f0', borderRadius: '16px', p: 6, textAlign: 'center' }}>
               <HeadsetMic sx={{ fontSize: 48, color: '#93c5fd', mb: 1 }} />
               <Typography sx={{ color: '#94a3b8', fontSize: '15px' }}>No inquiries yet. Submit your first one!</Typography>
@@ -179,14 +214,22 @@ const EmployeeSupportInquiries = () => {
               {inquiries.map((inq) => {
                 const s = statusStyle[inq.status];
                 return (
-                  <Paper key={inq.id} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '14px', p: 3, display: 'flex', alignItems: 'flex-start', gap: 2.5, '&:hover': { borderColor: '#93c5fd', boxShadow: '0 4px 16px rgba(29,78,216,0.10)' }, transition: 'all 0.15s' }}>
+                  <Paper key={inq._id} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '14px', p: 3, display: 'flex', alignItems: 'flex-start', gap: 2.5, '&:hover': { borderColor: '#93c5fd', boxShadow: '0 4px 16px rgba(29,78,216,0.10)' }, transition: 'all 0.15s' }}>
                     <Box sx={{ flex: 1 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.8, flexWrap: 'wrap' }}>
                         <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '15px' }}>{inq.subject}</Typography>
                         <Chip label={inq.category} size="small" sx={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#f1f5f9', color: '#475569', border: 'none' }} />
                       </Box>
                       <Typography sx={{ color: '#64748b', fontSize: '13px', lineHeight: 1.6 }}>{inq.message}</Typography>
-                      <Typography sx={{ color: '#94a3b8', fontSize: '12px', mt: 1 }}>{inq.id} &bull; Submitted {inq.date}</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: '12px', mt: 1 }}>
+                        Submitted {new Date(inq.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </Typography>
+                      {inq.response && (
+                        <Box sx={{ mt: 1.5, p: 1.5, backgroundColor: '#f0fdf4', borderRadius: '8px', borderLeft: '3px solid #16a34a' }}>
+                          <Typography sx={{ color: '#15803d', fontSize: '12px', fontWeight: 600, mb: 0.3 }}>Manager Response</Typography>
+                          <Typography sx={{ color: '#166534', fontSize: '13px', lineHeight: 1.6 }}>{inq.response}</Typography>
+                        </Box>
+                      )}
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
                       <Chip
@@ -208,7 +251,7 @@ const EmployeeSupportInquiries = () => {
                           <Tooltip title="Delete inquiry">
                             <IconButton
                               size="small"
-                              onClick={() => handleDelete(inq.id)}
+                              onClick={() => handleDelete(inq._id)}
                               sx={{ border: '1px solid #e2e8f0', borderRadius: '8px', p: '5px', color: '#ef4444', backgroundColor: '#fff5f5', '&:hover': { backgroundColor: '#fee2e2', borderColor: '#fca5a5' } }}
                             >
                               <DeleteOutline sx={{ fontSize: 16 }} />
@@ -251,9 +294,6 @@ const EmployeeSupportInquiries = () => {
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} PaperProps={{ sx: { borderRadius: '18px', p: 1, minWidth: 480 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: '#1e293b', fontSize: '18px', display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <EditOutlined sx={{ color: '#1d4ed8' }} /> Edit Inquiry
-          {editTarget && (
-            <Chip label={editTarget.id} size="small" sx={{ ml: 1, fontFamily: 'monospace', fontSize: '11px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none' }} />
-          )}
         </DialogTitle>
         <Divider />
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: '20px !important' }}>

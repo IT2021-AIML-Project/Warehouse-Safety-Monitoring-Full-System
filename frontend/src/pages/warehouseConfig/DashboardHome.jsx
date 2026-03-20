@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -11,22 +11,15 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Divider,
+  CircularProgress,
 } from '@mui/material';
 import {
   Warehouse,
   CheckCircle,
   People,
   PersonOff,
-  Storage,
-  LocalShipping,
-  Inventory,
-  Block,
 } from '@mui/icons-material';
-
-// Data arrays (replace with API data)
-const dummyZones = [];
-const dummyEmployees = [];
+import { getAllZones, getAllEmployees } from '../../services/api';
 
 // ── Helpers ────────────────────────────────────────────────────
 const typeColorMap = {
@@ -77,53 +70,46 @@ const StatCard = ({ icon, label, value, iconBg, valueColor }) => (
   </Paper>
 );
 
-// ── Zone type breakdown card ───────────────────────────────────
-const ZoneTypeCard = ({ icon, label, count, bg, color }) => (
-  <Paper
-    elevation={0}
-    sx={{
-      border: '1px solid #e2e8f0',
-      borderRadius: '16px',
-      p: 4,
-      textAlign: 'center',
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: 1.5,
-    }}
-  >
-    <Box
-      sx={{
-        width: 64,
-        height: 64,
-        borderRadius: '16px',
-        backgroundColor: bg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {React.cloneElement(icon, { sx: { color, fontSize: 32 } })}
-    </Box>
-    <Typography variant="h4" sx={{ fontWeight: 800, color }}>
-      {count}
-    </Typography>
-    <Typography variant="body1" sx={{ color: '#64748b', fontWeight: 500, fontSize: '15px' }}>
-      {label}
-    </Typography>
-  </Paper>
-);
-
 // ── Main Dashboard ─────────────────────────────────────────────
 const DashboardHome = () => {
-  const totalZones = dummyZones.length;
-  const activeZones = dummyZones.filter((z) => z.status === 'Active').length;
-  const totalEmployees = dummyEmployees.length;
-  const activeEmployees = dummyEmployees.filter((e) => e.status === 'Active').length;
+  const [zones, setZones] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const recentZones = [...dummyZones].slice(-4).reverse();
-  const recentEmployees = [...dummyEmployees].slice(-5).reverse();
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [zonesRes, employeesRes] = await Promise.all([
+          getAllZones(),
+          getAllEmployees(),
+        ]);
+        setZones(zonesRes.data.zones);
+        setEmployees(employeesRes.data.employees);
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const totalZones = zones.length;
+  const activeZones = zones.filter((z) => z.status === 'Active').length;
+  const totalEmployees = employees.length;
+  const activeEmployees = employees.filter((e) => e.status === 'Active').length;
+
+  const recentZones = [...zones].slice(0, 4);
+  const recentEmployees = [...employees].slice(0, 5);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 64px)' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3, minHeight: 'calc(100vh - 64px)', boxSizing: 'border-box', width: '100%' }}>
@@ -172,7 +158,7 @@ const DashboardHome = () => {
                 };
                 return (
                   <Paper
-                    key={zone.id}
+                    key={zone._id}
                     elevation={0}
                     sx={{
                       border: '1px solid #e2e8f0',
@@ -195,7 +181,7 @@ const DashboardHome = () => {
                         {zone.name}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#94a3b8', letterSpacing: 0.8, mt: 0.3, fontFamily: 'monospace', fontSize: '11px' }}>
-                        {zone.id}
+                        {zone.zoneId}
                       </Typography>
                     </Box>
 
@@ -224,7 +210,9 @@ const DashboardHome = () => {
                       {/* Created */}
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>Created</Typography>
-                        <Typography sx={{ fontSize: '11px', color: '#475569' }}>{zone.created}</Typography>
+                        <Typography sx={{ fontSize: '11px', color: '#475569' }}>
+                          {new Date(zone.createdAt).toLocaleDateString()}
+                        </Typography>
                       </Box>
                     </Box>
                   </Paper>
@@ -257,7 +245,7 @@ const DashboardHome = () => {
                 <TableBody>
                   {recentEmployees.map((emp, index) => (
                     <TableRow
-                      key={emp.id}
+                      key={emp._id}
                       sx={{ '&:hover': { backgroundColor: '#f8fafc' }, '&:last-child td': { border: 0 } }}
                     >
                       <TableCell sx={{ py: 2 }}>
@@ -278,7 +266,7 @@ const DashboardHome = () => {
                               {emp.name}
                             </Typography>
                             <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '13px' }}>
-                              {emp.id}
+                              {emp.employeeId}
                             </Typography>
                           </Box>
                         </Box>

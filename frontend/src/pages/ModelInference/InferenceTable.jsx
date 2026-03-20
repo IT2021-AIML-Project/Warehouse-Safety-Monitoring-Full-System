@@ -13,6 +13,7 @@ import {
   Card,
   CardContent,
   Tooltip,
+  Chip,
 } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
 import Delete from '@mui/icons-material/Delete';
@@ -67,33 +68,37 @@ const InferenceTable = ({ inferences, onDelete }) => {
               <TableCell><strong>Scan ID</strong></TableCell>
               <TableCell><strong>Date & Time</strong></TableCell>
               <TableCell>
-                <Tooltip title="Processing speed (technical: frames per second)">
-                  <span><strong>Processing Speed</strong></span>
+                <Tooltip title="Time taken to process the image (milliseconds)">
+                  <span><strong>Processing Time</strong></span>
                 </Tooltip>
               </TableCell>
-              <TableCell>
-                <Tooltip title="How accurately the AI detected safety equipment">
-                  <span><strong>Detection Accuracy</strong></span>
-                </Tooltip>
-              </TableCell>
-              <TableCell><strong>Safety Observations</strong></TableCell>
-              <TableCell><strong>Safety Issues</strong></TableCell>
+              <TableCell><strong>Persons</strong></TableCell>
+              <TableCell><strong>Detections</strong></TableCell>
+              <TableCell><strong>Violations</strong></TableCell>
               <TableCell align="right"><strong>Actions</strong></TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {inferences.map((row) => {
-              const violations = row.detections?.filter((d) => d.is_violation).length ?? 0;
+              const violations = row.total_violations ?? row.violations?.length ?? 0;
               return (
                 <TableRow key={row.inference_id} hover>
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
                     {row.inference_id?.slice(0, 8)}...
                   </TableCell>
                   <TableCell>{new Date(row.timestamp).toLocaleString()}</TableCell>
-                  <TableCell>{row.fps}</TableCell>
-                  <TableCell>{row.mAP?.toFixed(2)}</TableCell>
+                  <TableCell>
+                    {row.processing_time_ms ? `${row.processing_time_ms}ms` : '—'}
+                  </TableCell>
+                  <TableCell>{row.total_persons ?? 0}</TableCell>
                   <TableCell>{row.detections?.length ?? 0}</TableCell>
-                  <TableCell>{violations}</TableCell>
+                  <TableCell>
+                    {violations > 0 ? (
+                      <Chip label={violations} size="small" color="error" sx={{ fontWeight: 600 }} />
+                    ) : (
+                      <Chip label="0" size="small" color="success" sx={{ fontWeight: 600 }} />
+                    )}
+                  </TableCell>
                   <TableCell align="right">
                     <Button
                       size="small"
