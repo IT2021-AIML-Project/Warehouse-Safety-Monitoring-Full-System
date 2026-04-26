@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Unnecessary model checkpoints (only best.pt is needed)
+runs/
+
+# Uploads (runtime generated)
+uploads/
+
+# OS files
+Thumbs.db
+.DS_Store

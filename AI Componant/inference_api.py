@@ -1132,5 +1132,6 @@ def cctv_detection_log_alias():
 
 if __name__ == '__main__':
     load_model()
-    print('🚀 AI Inference API starting on port 5001')
-    app.run(host='0.0.0.0', port=5001, debug=False, threaded=True)
+    port = int(os.environ.get('PORT', 7860))
+    print(f'🚀 AI Inference API starting on port {port}')
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
