@@ -26,7 +26,7 @@ import {
   Person,
   Dashboard,
   Inventory,
-  Add,
+  AddBox,
   LocationOn,
   Close,
   Visibility,
@@ -44,14 +44,14 @@ const drawerWidth = 240;
 const pageMeta = [
   { label: 'Dashboard',          icon: <Dashboard   sx={{ fontSize: 20, color: '#3b82f6' }} /> },
   { label: 'Current Zones',      icon: <LocationOn  sx={{ fontSize: 20, color: '#3b82f6' }} /> },
-  { label: 'Add PPE Items',      icon: <Add         sx={{ fontSize: 20, color: '#3b82f6' }} /> },
+  { label: 'Add PPE Items',      icon: <AddBox      sx={{ fontSize: 20, color: '#3b82f6' }} /> },
   { label: 'Support Inquiries',  icon: <HeadsetMic  sx={{ fontSize: 20, color: '#16a34a' }} /> },
 ];
 
 const navItems = [
   { label: 'Dashboard',         icon: Dashboard,  color: '#3b82f6' },
   { label: 'Current Zones',     icon: LocationOn, color: '#3b82f6' },
-  { label: 'Add PPE Items',     icon: Add,        color: '#3b82f6' },
+  { label: 'Add PPE Items',     icon: AddBox,     color: '#3b82f6' },
   { label: 'Support Inquiries', icon: HeadsetMic, color: '#16a34a' },
 ];
 

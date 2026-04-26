@@ -129,13 +129,7 @@ const WarehouseConfigDashboard = () => {
     }
 
     try {
-      // TODO: Replace with actual API call
-      // const response = await changePassword({
-      //   currentPassword: passwordForm.currentPassword,
-      //   newPassword: passwordForm.newPassword
-      // });
-      
-      // Simulate API call
+      // TODO: Integrate with backend changePassword API endpoint
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       setPasswordSuccess('Password changed successfully!');

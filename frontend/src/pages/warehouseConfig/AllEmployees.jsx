@@ -24,8 +24,8 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { Search, People, Edit, Delete, Close, WarningAmber } from '@mui/icons-material';
-import { getAllEmployees as fetchEmployees, updateEmployee, deleteEmployee } from '../../services/api';
+import { Search, People, Edit, Delete, Close, WarningAmber, Lock } from '@mui/icons-material';
+import { getAllEmployees as fetchEmployees, updateEmployee, deleteEmployee, getPopulatedZones } from '../../services/api';
 
 const getInitials = (name) =>
   name.split(' ').map((n) => n[0]).join('').toUpperCase();
@@ -45,13 +45,31 @@ const AllEmployees = () => {
   // ── Delete dialog ──
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSuccess, setDeleteSuccess] = useState('');
 
-  // Fetch employees from API
+  // ── Assigned employees tracking ──
+  const [assignedEmployeeIds, setAssignedEmployeeIds] = useState(new Set());
+
+  // Fetch employees + zone assignments
   const loadEmployees = async () => {
     try {
       setLoading(true);
-      const res = await fetchEmployees();
-      setEmployees(res.data.employees);
+      const [empRes, assignRes] = await Promise.all([
+        fetchEmployees(),
+        getPopulatedZones(),
+      ]);
+      setEmployees(empRes.data.employees);
+
+      // Build set of employee IDs that are assigned to zones
+      const assigned = new Set();
+      (assignRes.data.zones || []).forEach(z => {
+        (z.employees || []).forEach(emp => {
+          const empId = typeof emp === 'object' ? emp._id : emp;
+          if (empId) assigned.add(empId);
+        });
+      });
+      setAssignedEmployeeIds(assigned);
     } catch (error) {
       console.error('Failed to fetch employees:', error);
     } finally {
@@ -107,21 +125,31 @@ const AllEmployees = () => {
   // ── Delete handlers ──
   const handleDeleteOpen = (emp) => {
     setDeleteTarget(emp);
+    setDeleteError('');
     setDeleteOpen(true);
   };
 
   const handleDeleteClose = () => {
     setDeleteOpen(false);
     setDeleteTarget(null);
+    setDeleteError('');
   };
 
   const handleDeleteConfirm = async () => {
+    // Double-check if assigned
+    if (assignedEmployeeIds.has(deleteTarget._id)) {
+      setDeleteError('This employee is assigned to a zone. Please unassign them first before deleting.');
+      return;
+    }
     try {
       await deleteEmployee(deleteTarget._id);
       handleDeleteClose();
+      setDeleteSuccess(`Employee "${deleteTarget.name}" deleted successfully.`);
+      setTimeout(() => setDeleteSuccess(''), 4000);
       loadEmployees();
     } catch (error) {
-      console.error('Failed to delete employee:', error);
+      const msg = error.response?.data?.message || 'Failed to delete employee';
+      setDeleteError(msg);
     }
   };
 
@@ -237,17 +265,25 @@ const AllEmployees = () => {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
                           <Tooltip title="Edit">
                             <IconButton size="small" sx={{ color: '#3b82f6' }} onClick={() => handleEditOpen(emp)}>
                               <Edit fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton size="small" sx={{ color: '#ef4444' }} onClick={() => handleDeleteOpen(emp)}>
-                              <Delete fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {assignedEmployeeIds.has(emp._id) ? (
+                            <Tooltip title="Cannot delete — employee is assigned to a zone">
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, ml: 0.5 }}>
+                                <Lock sx={{ fontSize: 14, color: '#94a3b8' }} />
+                              </Box>
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Delete">
+                              <IconButton size="small" sx={{ color: '#ef4444' }} onClick={() => handleDeleteOpen(emp)}>
+                                <Delete fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                         </Box>
                       </TableCell>
                     </TableRow>
@@ -326,7 +362,11 @@ const AllEmployees = () => {
         </DialogTitle>
 
         <DialogContent sx={{ pt: 1 }}>
-          <Alert severity="error" sx={{ mb: 2, fontWeight: 500 }}>This action cannot be undone.</Alert>
+          {deleteError ? (
+            <Alert severity="warning" sx={{ mb: 2, fontWeight: 500 }}>{deleteError}</Alert>
+          ) : (
+            <Alert severity="error" sx={{ mb: 2, fontWeight: 500 }}>This action cannot be undone.</Alert>
+          )}
           <Typography variant="body1" sx={{ color: '#475569' }}>
             Are you sure you want to delete employee{' '}
             <strong style={{ color: '#1e293b' }}>{deleteTarget?.name}</strong>?
@@ -347,6 +387,20 @@ const AllEmployees = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── Success Snackbar ── */}
+      <Alert
+        severity="success"
+        sx={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          borderRadius: '10px', fontWeight: 600, zIndex: 9999,
+          transition: 'opacity 0.3s', opacity: deleteSuccess ? 1 : 0, pointerEvents: deleteSuccess ? 'auto' : 'none',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+        }}
+        onClose={() => setDeleteSuccess('')}
+      >
+        {deleteSuccess}
+      </Alert>
 
     </Box>
   );

@@ -6,8 +6,9 @@ import {
   TableHead, TableRow, Tooltip,
 } from '@mui/material';
 import {
-  Visibility, Edit, Delete, Add, FileDownload, Close, Warning,
+  Visibility, Edit, Delete, Add, FileDownload, Close, Warning, PictureAsPdf,
 } from '@mui/icons-material';
+import { downloadPDF } from '../../utils/reportUtils';
 
 function getStatusColor(status) {
   if (status === 'Pending') return 'warning';
@@ -16,7 +17,7 @@ function getStatusColor(status) {
   return 'default';
 }
 
-const violationTypes = ['No Helmet', 'No Mask', 'No Safety Vest', 'No Gloves', 'No Safety Boots'];
+const violationTypes = ['No Helmet', 'No Mask', 'No Safety Vest'];
 const statusOptions = ['Pending', 'Verified', 'False Positive'];
 
 const defaultNew = {
@@ -47,16 +48,47 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
   const [newV, setNewV] = useState(defaultNew);
 
   const handleExportCSV = () => {
-    const header = ['Date', 'Employee', 'Section', 'Type', 'Confidence', 'Status'];
-    const rows = violations.map((v) => [v.date, v.employee, v.section, v.type, v.confidence + '%', v.status]);
+    const header = ['Date', 'Section', 'Type', 'Confidence', 'Status'];
+    const rows = violations.map((v) => [v.date, v.section, v.type, v.confidence + '%', v.status]);
     const csv = [header, ...rows].map((r) => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'violations.csv';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportPDF = () => {
+    const totalViolations = violations.length;
+    const avgConf = totalViolations
+      ? violations.reduce((s, v) => s + (Number(v.confidence) || 0), 0) / totalViolations
+      : 0;
+
+    downloadPDF({
+      title: 'Violations Log Report',
+      dateRange: violations.length
+        ? `${violations[violations.length - 1]?.date || ''} to ${violations[0]?.date || ''}`
+        : 'All records',
+      stats: {
+        totalPeople: '—',
+        totalViolations,
+        safetyScore: avgConf,
+        complianceScore: totalViolations === 0 ? 100 : Math.max(0, 100 - (avgConf * totalViolations) / 10),
+      },
+      columns: ['Date', 'Section', 'Violation Type', 'Confidence', 'Status'],
+      rows: violations.map((v) => [
+        v.date,
+        v.section,
+        v.type,
+        `${v.confidence}%`,
+        v.status,
+      ]),
+      filename: `violations-log-${new Date().toISOString().slice(0, 10)}`,
+    });
   };
 
   const handleSaveEdit = () => { onUpdate(editForm); setEditDialog(false); };
@@ -98,9 +130,17 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
             Export CSV
           </Button>
           <Button
+            size="small" variant="contained" startIcon={<PictureAsPdf />}
+            onClick={handleExportPDF}
+            disabled={violations.length === 0}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, background: 'linear-gradient(135deg,#1C4D8D,#4988C4)' }}
+          >
+            Export PDF
+          </Button>
+          <Button
             size="small" variant="contained" startIcon={<Add />}
             onClick={() => setAddDialog(true)}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, background: 'linear-gradient(135deg,#1C4D8D,#4988C4)' }}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, background: 'linear-gradient(135deg,#7c3aed,#9f5ff1)' }}
           >
             Add Violation
           </Button>
@@ -112,7 +152,7 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
         <Table size="small">
           <TableHead>
             <TableRow sx={{ backgroundColor: '#F0F8FB' }}>
-              {['Date', 'Employee', 'Section', 'Type', 'Confidence', 'Status', 'Actions'].map((h) => (
+              {['Date', 'Section', 'Type', 'Confidence', 'Status', 'Actions'].map((h) => (
                 <TableCell key={h} sx={{ fontWeight: 800, color: '#0F2854', fontSize: '12px', py: 1.5 }}>{h}</TableCell>
               ))}
             </TableRow>
@@ -120,13 +160,12 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
           <TableBody>
             {violations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 4, color: '#94a3b8' }}>No violations recorded.</TableCell>
+                <TableCell colSpan={6} align="center" sx={{ py: 4, color: '#94a3b8' }}>No violations recorded.</TableCell>
               </TableRow>
             ) : (
               violations.map((v) => (
                 <TableRow key={v.id} hover sx={{ '&:hover': { backgroundColor: '#F0F8FB' } }}>
                   <TableCell sx={{ fontSize: '13px' }}>{v.date}</TableCell>
-                  <TableCell sx={{ fontSize: '13px', fontWeight: 600 }}>{v.employee}</TableCell>
                   <TableCell sx={{ fontSize: '13px' }}>{v.section}</TableCell>
                   <TableCell>
                     <Chip label={v.type} size="small" sx={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#FEE2E2', color: '#DC2626' }} />
@@ -172,7 +211,6 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
             <Grid container spacing={2}>
               {[
                 ['Date', selected.date],
-                ['Employee', selected.employee],
                 ['Section', selected.section],
                 ['Violation Type', selected.type],
                 ['Confidence', `${selected.confidence}%`],
@@ -197,11 +235,7 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
         <DialogContent sx={{ pt: 2 }}>
           {editForm && (
             <Grid container spacing={2} sx={{ mt: 0 }}>
-              <Grid item xs={12} sm={6}>
-                <FormField label="Employee">
-                  <TextField fullWidth size="small" sx={inputSx} value={editForm.employee} onChange={(e) => setEditForm({ ...editForm, employee: e.target.value })} />
-                </FormField>
-              </Grid>
+
               <Grid item xs={12} sm={6}>
                 <FormField label="Section">
                   <TextField fullWidth size="small" sx={inputSx} value={editForm.section} onChange={(e) => setEditForm({ ...editForm, section: e.target.value })} />
@@ -247,11 +281,7 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
                 <TextField fullWidth size="small" type="date" sx={inputSx} value={newV.date} onChange={(e) => setNewV({ ...newV, date: e.target.value })} />
               </FormField>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormField label="Employee">
-                <TextField fullWidth size="small" sx={inputSx} placeholder="Employee name" value={newV.employee} onChange={(e) => setNewV({ ...newV, employee: e.target.value })} />
-              </FormField>
-            </Grid>
+
             <Grid item xs={12} sm={6}>
               <FormField label="Section">
                 <TextField fullWidth size="small" sx={inputSx} placeholder="Zone / Section" value={newV.section} onChange={(e) => setNewV({ ...newV, section: e.target.value })} />
@@ -285,7 +315,7 @@ export function ViolationsTable({ violations, onUpdate, onDelete, onAdd }) {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>
           <Button onClick={() => setAddDialog(false)} variant="outlined" sx={{ borderRadius: 2, textTransform: 'none' }}>Cancel</Button>
-          <Button onClick={handleAddNew} variant="contained" disabled={!newV.employee || !newV.type} sx={{ borderRadius: 2, textTransform: 'none', background: 'linear-gradient(135deg,#1C4D8D,#4988C4)' }}>Add</Button>
+          <Button onClick={handleAddNew} variant="contained" disabled={!newV.type} sx={{ borderRadius: 2, textTransform: 'none', background: 'linear-gradient(135deg,#1C4D8D,#4988C4)' }}>Add</Button>
         </DialogActions>
       </Dialog>
     </Box>

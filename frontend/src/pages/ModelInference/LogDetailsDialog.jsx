@@ -6,6 +6,7 @@ import {
   DialogActions,
   Button,
   Typography,
+  Grid,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +24,8 @@ import {
 const LogDetailsDialog = ({ open, onClose, inference }) => {
   if (!inference) return null;
 
+  const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:5000';
+
   const violations = inference.violations || [];
   const detections = inference.detections || [];
   const hasViolations = violations.length > 0 ||
@@ -32,6 +35,60 @@ const LogDetailsDialog = ({ open, onClose, inference }) => {
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Safety Scan Report</DialogTitle>
       <DialogContent>
+        {(inference.snapshot_url || inference.annotated_url) && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+              Saved Images
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                {inference.snapshot_url ? (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Snapshot
+                    </Typography>
+                    <img
+                      src={`${API_BASE}${inference.snapshot_url}`}
+                      alt="Snapshot"
+                      style={{
+                        width: '100%',
+                        maxHeight: 240,
+                        objectFit: 'cover',
+                        borderRadius: 8,
+                        display: 'block',
+                      }}
+                    />
+                  </Box>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">No snapshot saved.</Typography>
+                )}
+              </Grid>
+              <Grid item xs={12} md={6}>
+                {inference.annotated_url ? (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Annotated Output
+                    </Typography>
+                    <img
+                      src={`${API_BASE}${inference.annotated_url}`}
+                      alt="Annotated"
+                      style={{
+                        width: '100%',
+                        maxHeight: 240,
+                        objectFit: 'cover',
+                        borderRadius: 8,
+                        display: 'block',
+                      }}
+                    />
+                  </Box>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">No annotated image saved.</Typography>
+                )}
+              </Grid>
+            </Grid>
+          </Box>
+        )}
+
         {hasViolations ? (
           <Alert severity="error" sx={{ mb: 3 }}>
             <strong>Safety issues detected</strong> — Immediate attention recommended.

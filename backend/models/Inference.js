@@ -9,7 +9,7 @@ const inferenceSchema = new mongoose.Schema({
     },
     source_type: {
         type: String,
-        enum: ['image', 'video', 'cctv'],
+        enum: ['image', 'video', 'webcam', 'cctv'],
         required: [true, 'Source type is required']
     },
     camera_id: {
@@ -33,6 +33,10 @@ const inferenceSchema = new mongoose.Schema({
         default: 0
     },
     snapshot_url: {
+        type: String,
+        default: null
+    },
+    annotated_url: {
         type: String,
         default: null
     },

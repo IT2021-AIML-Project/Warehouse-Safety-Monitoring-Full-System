@@ -20,7 +20,7 @@ function getFirstDayOfWeek(year, month) {
 }
 
 // ── Component ────────────────────────────────────────────────────
-const Footer = () => {
+const Footer = ({ onProvideFeedback }) => {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -114,6 +114,7 @@ const Footer = () => {
 
           <Button
             variant="outlined"
+            onClick={onProvideFeedback}
             sx={{
               borderColor: '#f59e0b', color: '#f59e0b', textTransform: 'none',
               fontWeight: 700, fontSize: '14px', borderRadius: '8px', px: 3, py: 1,

@@ -36,15 +36,20 @@ const ppeItemSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Auto-compute status from quantity before saving
-ppeItemSchema.pre('save', function () {
-    if (this.quantity === 0) this.status = 'Out of Stock';
-    else if (this.quantity <= 15) this.status = 'Low Stock';
+// Auto-compute status based on surplus (quantity - assigned employees)
+ppeItemSchema.pre('save', async function () {
+    const ZoneAssignment = mongoose.model('ZoneAssignment');
+    const assignedCount = await ZoneAssignment.countDocuments({ zone: this.zone });
+    const surplus = this.quantity - assignedCount;
+
+    if (surplus <= 0) this.status = 'Out of Stock';
+    else if (surplus <= 3) this.status = 'Low Stock';
     else this.status = 'In Stock';
 });
 
 ppeItemSchema.index({ itemId: 1 });
 ppeItemSchema.index({ zone: 1 });
+ppeItemSchema.index({ name: 1, zone: 1 }, { unique: true });
 
 const PPEItem = mongoose.model('PPEItem', ppeItemSchema);
 

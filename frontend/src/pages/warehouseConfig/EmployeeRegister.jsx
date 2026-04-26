@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Snackbar, Alert } from '@mui/material';
+import emailjs from '@emailjs/browser';
 import {
   PersonAdd,
   Visibility,
@@ -57,7 +58,25 @@ const EmployeeRegister = () => {
         email: form.email,
         password: form.password,
       });
-      setSnackbar({ open: true, message: `Employee "${form.name}" registered successfully!`, severity: 'success' });
+
+      // Send welcome email with login credentials via EmailJS
+      try {
+        await emailjs.send(
+          'service_qb5plfc',      // TODO: Replace with your EmailJS Service ID
+          'template_ojsg1wn',     // TODO: Replace with your EmailJS Template ID
+          {
+            name: form.name,
+            employeeId: form.employeeId,
+            email: form.email,
+            password: form.password,
+          },
+          'VKHkQqmX2pODopYgG'       // TODO: Replace with your EmailJS Public Key
+        );
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+      }
+
+      setSnackbar({ open: true, message: `Employee "${form.name}" registered and welcome email sent successfully! 🎉`, severity: 'success' });
       setForm({ employeeId: '', name: '', email: '', password: '' });
       setErrors({});
     } catch (error) {

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import emailjs from '@emailjs/browser';
 import {
   Box,
   Typography,
@@ -7,7 +8,6 @@ import {
   Button,
   Chip,
   Divider,
-  Avatar,
   Alert,
   Collapse,
   Tooltip,
@@ -16,9 +16,6 @@ import {
 } from '@mui/material';
 import {
   Send,
-  PersonAdd,
-  Group,
-  LocationOn,
   Close,
   CheckCircle,
   Email,
@@ -29,34 +26,10 @@ import {
   FileUpload,
   DeleteOutline,
   Visibility,
-  People,
-  KeyboardArrowDown,
-  KeyboardArrowUp,
   AlternateEmail,
   MarkEmailUnread,
-  Engineering,
-  Badge,
 } from '@mui/icons-material';
-
-// Employee and zone data (replace with API data)
-const MOCK_EMPLOYEES = [];
-const ZONES = [];
-
-// Warehouse Staff data (frontend only)
-const WAREHOUSE_STAFF = [
-  { id: 'ws1', name: 'Nimal Perera', role: 'Warehouse Manager', email: 'nimal.perera@safetyfirst.lk', department: 'Operations', status: 'active' },
-  { id: 'ws2', name: 'Suresh Kumar', role: 'Shift Supervisor', email: 'suresh.kumar@safetyfirst.lk', department: 'Operations', status: 'active' },
-  { id: 'ws3', name: 'Amara Silva', role: 'Safety Officer', email: 'amara.silva@safetyfirst.lk', department: 'Safety', status: 'active' },
-  { id: 'ws4', name: 'Dinesh Fernando', role: 'Inventory Lead', email: 'dinesh.fernando@safetyfirst.lk', department: 'Inventory', status: 'active' },
-  { id: 'ws5', name: 'Priya Jayawardena', role: 'Forklift Operator', email: 'priya.jayawardena@safetyfirst.lk', department: 'Operations', status: 'on-leave' },
-  { id: 'ws6', name: 'Ruwan Bandara', role: 'Quality Inspector', email: 'ruwan.bandara@safetyfirst.lk', department: 'Quality', status: 'active' },
-];
-
-const RECIPIENT_MODES = [
-  { key: 'individual', label: 'Specific Employees', icon: PersonAdd },
-  { key: 'zone', label: 'By Zone', icon: LocationOn },
-  { key: 'all', label: 'All Employees', icon: Group },
-];
+import CircularProgress from '@mui/material/CircularProgress';
 
 const PRIORITIES = [
   { value: 'normal', label: 'Normal', color: '#475569', bg: '#f1f5f9', border: '#cbd5e1' },
@@ -78,14 +51,12 @@ const getFileColor = (t) => t === 'application/pdf'
 const formatBytes = (b) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
 const initForm = {
+  to_email: '',
   subject: '',
   body: '',
   cc: '',
   bcc: '',
   priority: 'normal',
-  recipientMode: 'individual',
-  selectedEmployees: [],
-  selectedZones: [],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,10 +65,10 @@ const SendEmailForm = () => {
   const [attachments, setAttachments] = useState([]);
   const [attachError, setAttachError] = useState('');
   const [dragOver, setDragOver] = useState(false);
-  const [employeeSearch, setEmployeeSearch] = useState('');
-  const [expandedZones, setExpandedZones] = useState({});
   const [errors, setErrors] = useState({});
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [sending, setSending] = useState(false);
   const [sentEmails, setSentEmails] = useState([]);
   const fileInputRef = useRef(null);
 
@@ -116,89 +87,64 @@ const SendEmailForm = () => {
   };
   const removeAttachment = (id) => setAttachments((p) => p.filter((a) => a.id !== id));
 
-  // ── Helpers ──
-  const zoneEmployees = (zoneId) => MOCK_EMPLOYEES.filter((e) => e.zone === zoneId);
-  const zoneRecipients = MOCK_EMPLOYEES.filter((e) => form.selectedZones.includes(e.zone));
-
-  const addEmployee = (id) => {
-    setForm((f) => ({ ...f, selectedEmployees: [...f.selectedEmployees, id] }));
-    setErrors((e) => ({ ...e, recipients: '' }));
-  };
-  const removeEmployee = (id) => setForm((f) => ({ ...f, selectedEmployees: f.selectedEmployees.filter((x) => x !== id) }));
-
-  const toggleZone = (zoneId) => {
-    setForm((f) => ({
-      ...f,
-      selectedZones: f.selectedZones.includes(zoneId)
-        ? f.selectedZones.filter((z) => z !== zoneId)
-        : [...f.selectedZones, zoneId],
-    }));
-    setErrors((e) => ({ ...e, recipients: '' }));
-  };
-
-  const toggleZoneExpand = (zoneId) =>
-    setExpandedZones((p) => ({ ...p, [zoneId]: !p[zoneId] }));
-
-  const filteredEmployees = MOCK_EMPLOYEES.filter(
-    (e) => !form.selectedEmployees.includes(e.id) &&
-      (e.name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-        e.role.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-        e.email.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-        e.zone.toLowerCase().includes(employeeSearch.toLowerCase())),
-  );
-
   // ── Validation ──
   const validate = () => {
     const errs = {};
+    if (!form.to_email.trim()) errs.to_email = 'Recipient email is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.to_email.trim())) errs.to_email = 'Enter a valid email address.';
     if (!form.subject.trim()) errs.subject = 'Subject is required.';
     if (!form.body.trim()) errs.body = 'Email body is required.';
-    if (form.recipientMode === 'individual' && form.selectedEmployees.length === 0)
-      errs.recipients = 'Select at least one recipient.';
-    if (form.recipientMode === 'zone' && form.selectedZones.length === 0)
-      errs.recipients = 'Select at least one zone.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  // ── Send ──
-  const handleSend = () => {
+  // ── Send via EmailJS ──
+  const handleSend = async () => {
     if (!validate()) return;
+    setSending(true);
+    setErrorMsg('');
 
-    let recipients;
-    if (form.recipientMode === 'all') recipients = MOCK_EMPLOYEES;
-    else if (form.recipientMode === 'zone') recipients = zoneRecipients;
-    else recipients = MOCK_EMPLOYEES.filter((e) => form.selectedEmployees.includes(e.id));
+    try {
+      await emailjs.send(
+        'service_qb5plfc',       // EmailJS Service ID
+        'template_ntnjg4o',      // EmailJS Template ID
+        {
+          to_email: form.to_email.trim(),
+          subject: form.subject.trim(),
+          message: form.body.trim(),
+          cc: form.cc.trim() || undefined,
+          bcc: form.bcc.trim() || undefined,
+          priority: form.priority,
+        },
+        'VKHkQqmX2pODopYgG'      // EmailJS Public Key
+      );
 
-    const email = {
-      id: Date.now(),
-      subject: form.subject.trim(),
-      body: form.body.trim(),
-      cc: form.cc.trim(),
-      bcc: form.bcc.trim(),
-      priority: form.priority,
-      recipientMode: form.recipientMode,
-      recipients,
-      zones: form.recipientMode === 'zone' ? form.selectedZones : [],
-      attachments: attachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url })),
-      time: new Date().toLocaleString(),
-    };
+      const email = {
+        id: Date.now(),
+        to_email: form.to_email.trim(),
+        subject: form.subject.trim(),
+        body: form.body.trim(),
+        cc: form.cc.trim(),
+        bcc: form.bcc.trim(),
+        priority: form.priority,
+        attachments: attachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url })),
+        time: new Date().toLocaleString(),
+      };
 
-    setSentEmails((p) => [email, ...p]);
-
-    const label = form.recipientMode === 'all'
-      ? `all ${MOCK_EMPLOYEES.length} employees`
-      : form.recipientMode === 'zone'
-        ? `${recipients.length} employee(s) across ${form.selectedZones.length} zone(s)`
-        : `${recipients.length} employee(s)`;
-
-    setSuccessMsg(`Email sent to ${label} successfully!`);
-    setForm(initForm);
-    setAttachments([]);
-    setAttachError('');
-    setEmployeeSearch('');
-    setExpandedZones({});
-    setErrors({});
-    setTimeout(() => setSuccessMsg(''), 5000);
+      setSentEmails((p) => [email, ...p]);
+      setSuccessMsg(`Email sent to ${form.to_email.trim()} successfully!`);
+      setForm(initForm);
+      setAttachments([]);
+      setAttachError('');
+      setErrors({});
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (error) {
+      console.error('EmailJS error:', error);
+      setErrorMsg(error?.text || 'Failed to send email. Please try again.');
+      setTimeout(() => setErrorMsg(''), 6000);
+    } finally {
+      setSending(false);
+    }
   };
 
   const priority = PRIORITIES.find((p) => p.value === form.priority) || PRIORITIES[0];
@@ -224,7 +170,7 @@ const SendEmailForm = () => {
           Send Email
         </Typography>
         <Typography sx={{ color: '#64748b', fontSize: '14px' }}>
-          Compose and send an email to individual employees, zones, or all warehouse staff.
+          Compose and send email notifications to warehouse staff.
         </Typography>
       </Paper>
 
@@ -234,6 +180,15 @@ const SendEmailForm = () => {
           sx={{ mb: 3, borderRadius: '12px', fontWeight: 600 }}
           action={<IconButton size="small" onClick={() => setSuccessMsg('')}><Close fontSize="small" /></IconButton>}>
           {successMsg}
+        </Alert>
+      </Collapse>
+
+      {/* ── Error Alert ── */}
+      <Collapse in={!!errorMsg}>
+        <Alert severity="error"
+          sx={{ mb: 3, borderRadius: '12px', fontWeight: 600 }}
+          action={<IconButton size="small" onClick={() => setErrorMsg('')}><Close fontSize="small" /></IconButton>}>
+          {errorMsg}
         </Alert>
       </Collapse>
 
@@ -264,6 +219,15 @@ const SendEmailForm = () => {
               );
             })}
           </Box>
+
+          {/* To (recipient) */}
+          <TextField fullWidth label="To (Recipient Email) *"
+            placeholder="employee@warehouse.com"
+            value={form.to_email}
+            onChange={(e) => { setForm((f) => ({ ...f, to_email: e.target.value })); setErrors((er) => ({ ...er, to_email: '' })); }}
+            error={!!errors.to_email} helperText={errors.to_email}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Email sx={{ fontSize: 18, color: '#94a3b8' }} /></InputAdornment> }}
+            sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: '10px' } }} />
 
           {/* Subject */}
           <TextField fullWidth label="Subject *"
@@ -398,323 +362,7 @@ const SendEmailForm = () => {
           )}
         </Box>
 
-        {/* ── Section: Send Email Type ── */}
-        <Box sx={{ p: 3 }}>
-          <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '15px', mb: 0.5 }}>
-            Send Email Type
-          </Typography>
-          <Typography sx={{ fontSize: '13px', color: '#94a3b8', mb: 2 }}>
-            Choose how you want to send this email
-          </Typography>
 
-          {/* Type cards */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1.5, mb: 2.5 }}>
-            {[
-              { key: 'individual', label: 'Individual', sub: 'Send to specific employees', Icon: PersonAdd, color: '#0284c7', bg: '#f0f9ff', border: '#7dd3fc', lightBg: '#e0f2fe' },
-              { key: 'zone', label: 'By Zone', sub: 'Target a warehouse zone', Icon: LocationOn, color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd', lightBg: '#ede9fe' },
-              { key: 'all', label: 'Broadcast', sub: 'Send to all employees', Icon: Group, color: '#0f766e', bg: '#f0fdfa', border: '#5eead4', lightBg: '#ccfbf1' },
-            ].map(({ key, label, sub, Icon, color, bg, border, lightBg }) => {
-              const active = form.recipientMode === key;
-              return (
-                <Paper key={key} elevation={0} onClick={() => {
-                  setForm((f) => ({ ...f, recipientMode: key, selectedEmployees: [], selectedZones: [] }));
-                  setExpandedZones({});
-                  setErrors((er) => ({ ...er, recipients: '' }));
-                }}
-                  sx={{
-                    border: `2px solid ${active ? border : '#e2e8f0'}`, borderRadius: '14px', p: 2,
-                    cursor: 'pointer', backgroundColor: active ? lightBg : '#fafafa',
-                    transition: 'all 0.18s',
-                    '&:hover': { borderColor: border, backgroundColor: lightBg }
-                  }}>
-                  <Box sx={{
-                    width: 42, height: 42, borderRadius: '11px',
-                    backgroundColor: active ? bg : '#f1f5f9',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1.5
-                  }}>
-                    <Icon sx={{ fontSize: 22, color: active ? color : '#94a3b8' }} />
-                  </Box>
-                  <Typography sx={{ fontWeight: 700, fontSize: '14px', color: active ? color : '#1e293b', mb: 0.4 }}>
-                    {label}
-                  </Typography>
-                  <Typography sx={{ fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                    {sub}
-                  </Typography>
-                  {active && (
-                    <Box sx={{ mt: 1.2, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <CheckCircle sx={{ fontSize: 14, color }} />
-                      <Typography sx={{ fontSize: '11px', fontWeight: 700, color }}>Selected</Typography>
-                    </Box>
-                  )}
-                </Paper>
-              );
-            })}
-          </Box>
-
-          {/* ── Individual mode ── */}
-          {form.recipientMode === 'individual' && (
-            <Box>
-              <TextField fullWidth size="small"
-                placeholder="Search by name, role, email or zone…"
-                value={employeeSearch}
-                onChange={(e) => setEmployeeSearch(e.target.value)}
-                sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: '10px' } }} />
-
-              {/* Selected chips */}
-              {form.selectedEmployees.length > 0 && (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-                  {form.selectedEmployees.map((id) => {
-                    const emp = MOCK_EMPLOYEES.find((e) => e.id === id);
-                    return emp ? (
-                      <Tooltip key={id} title={emp.email}>
-                        <Chip
-                          avatar={<Avatar sx={{ width: 22, height: 22, fontSize: '11px', bgcolor: '#bae6fd', color: '#0284c7' }}>{emp.name[0]}</Avatar>}
-                          label={emp.name}
-                          onDelete={() => removeEmployee(id)}
-                          sx={{ fontSize: '13px', fontWeight: 600, backgroundColor: '#f0f9ff', color: '#0284c7', border: '1px solid #7dd3fc' }} />
-                      </Tooltip>
-                    ) : null;
-                  })}
-                </Box>
-              )}
-
-              {/* Employee list */}
-              <Paper elevation={0}
-                sx={{ border: `1.5px solid ${errors.recipients ? '#fca5a5' : '#e2e8f0'}`, borderRadius: '12px', maxHeight: 260, overflowY: 'auto' }}>
-                {filteredEmployees.length === 0 ? (
-                  <Typography sx={{ p: 2.5, color: '#94a3b8', fontSize: '14px', textAlign: 'center' }}>
-                    {employeeSearch ? 'No employees match your search.' : 'All employees are selected.'}
-                  </Typography>
-                ) : (
-                  filteredEmployees.map((emp, idx) => (
-                    <React.Fragment key={emp.id}>
-                      {idx > 0 && <Divider sx={{ borderColor: '#f1f5f9' }} />}
-                      <Box onClick={() => addEmployee(emp.id)}
-                        sx={{
-                          display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.4,
-                          cursor: 'pointer', '&:hover': { backgroundColor: '#f0f9ff' }
-                        }}>
-                        <Avatar sx={{ width: 36, height: 36, fontSize: '13px', bgcolor: '#bae6fd', color: '#0284c7', fontWeight: 700 }}>
-                          {emp.name[0]}
-                        </Avatar>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '14px' }}>{emp.name}</Typography>
-                          <Typography sx={{ fontSize: '12px', color: '#64748b' }}>{emp.email} · {emp.zone}</Typography>
-                        </Box>
-                        <Chip label="Add" size="small"
-                          sx={{ fontSize: '11px', fontWeight: 700, backgroundColor: '#f0f9ff', color: '#0284c7', border: '1px solid #7dd3fc', cursor: 'pointer' }} />
-                      </Box>
-                    </React.Fragment>
-                  ))
-                )}
-              </Paper>
-              {errors.recipients && (
-                <Typography sx={{ color: '#ef4444', fontSize: '12px', mt: 0.8, ml: 1.5 }}>{errors.recipients}</Typography>
-              )}
-            </Box>
-          )}
-
-          {/* ── Zone mode ── */}
-          {form.recipientMode === 'zone' && (
-            <Box>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {ZONES.map((zone) => {
-                  const emps = zoneEmployees(zone.id);
-                  const selected = form.selectedZones.includes(zone.id);
-                  const expanded = expandedZones[zone.id];
-                  return (
-                    <Paper key={zone.id} elevation={0}
-                      sx={{
-                        border: `1.5px solid ${selected ? zone.border : '#e2e8f0'}`,
-                        borderLeft: `5px solid ${zone.color}`, borderRadius: '12px', overflow: 'hidden',
-                        backgroundColor: selected ? zone.lightBg : '#fff', transition: 'all 0.2s'
-                      }}>
-                      <Box onClick={() => toggleZone(zone.id)}
-                        sx={{
-                          display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.6, cursor: 'pointer',
-                          '&:hover': { backgroundColor: zone.bg + '55' }
-                        }}>
-                        <Box sx={{
-                          width: 38, height: 38, borderRadius: '10px', backgroundColor: zone.bg,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                        }}>
-                          <LocationOn sx={{ fontSize: 20, color: zone.color }} />
-                        </Box>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '14px' }}>
-                            {zone.label}
-                            <Typography component="span" sx={{ fontWeight: 400, color: '#64748b', fontSize: '13px', ml: 1 }}>
-                              — {zone.description}
-                            </Typography>
-                          </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mt: 0.3 }}>
-                            <People sx={{ fontSize: 14, color: zone.color }} />
-                            <Typography sx={{ fontSize: '12px', color: zone.color, fontWeight: 600 }}>
-                              {emps.length} employee{emps.length !== 1 ? 's' : ''} assigned
-                            </Typography>
-                          </Box>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {selected && (
-                            <Chip label="Selected" size="small"
-                              sx={{ fontSize: '11px', fontWeight: 700, backgroundColor: zone.bg, color: zone.color, border: `1px solid ${zone.border}` }} />
-                          )}
-                          <IconButton size="small"
-                            onClick={(e) => { e.stopPropagation(); toggleZoneExpand(zone.id); }}
-                            sx={{ color: '#94a3b8' }}>
-                            {expanded ? <KeyboardArrowUp fontSize="small" /> : <KeyboardArrowDown fontSize="small" />}
-                          </IconButton>
-                        </Box>
-                      </Box>
-
-                      {expanded && (
-                        <Box sx={{ borderTop: `1px solid ${zone.border}44`, backgroundColor: zone.bg + '33' }}>
-                          {emps.map((emp, idx) => (
-                            <React.Fragment key={emp.id}>
-                              {idx > 0 && <Divider sx={{ borderColor: zone.border + '44', mx: 2 }} />}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 1.2 }}>
-                                <Avatar sx={{ width: 30, height: 30, fontSize: '12px', bgcolor: zone.bg, color: zone.color, fontWeight: 700, border: `1.5px solid ${zone.border}` }}>
-                                  {emp.name[0]}
-                                </Avatar>
-                                <Box>
-                                  <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '13px' }}>{emp.name}</Typography>
-                                  <Typography sx={{ fontSize: '11px', color: '#64748b' }}>{emp.email}</Typography>
-                                </Box>
-                              </Box>
-                            </React.Fragment>
-                          ))}
-                        </Box>
-                      )}
-                    </Paper>
-                  );
-                })}
-              </Box>
-
-              {errors.recipients && (
-                <Typography sx={{ color: '#ef4444', fontSize: '12px', mt: 0.8, ml: 0.5 }}>{errors.recipients}</Typography>
-              )}
-
-              {form.selectedZones.length > 0 && (
-                <Paper elevation={0}
-                  sx={{ mt: 2, border: '1.5px solid #bae6fd', backgroundColor: '#f0f9ff', borderRadius: '12px', p: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <CheckCircle sx={{ fontSize: 17, color: '#0284c7' }} />
-                    <Typography sx={{ fontWeight: 700, color: '#075985', fontSize: '13.5px' }}>
-                      {zoneRecipients.length} employee{zoneRecipients.length !== 1 ? 's' : ''} will receive this email
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8 }}>
-                    {form.selectedZones.map((zid) => {
-                      const z = ZONES.find((z) => z.id === zid);
-                      return z ? (
-                        <Chip key={zid}
-                          icon={<LocationOn sx={{ fontSize: 14, color: z.color }} />}
-                          label={`${z.label} (${zoneEmployees(zid).length})`}
-                          onDelete={() => toggleZone(zid)}
-                          size="small"
-                          sx={{ fontSize: '12px', fontWeight: 600, backgroundColor: z.bg, color: z.color, border: `1px solid ${z.border}` }} />
-                      ) : null;
-                    })}
-                  </Box>
-                </Paper>
-              )}
-            </Box>
-          )}
-
-          {/* ── All employees ── */}
-          {form.recipientMode === 'all' && (
-            <Paper elevation={0}
-              sx={{
-                border: '1.5px solid #bae6fd', backgroundColor: '#f0f9ff', borderRadius: '12px', p: 2,
-                display: 'flex', alignItems: 'center', gap: 1.5
-              }}>
-              <Group sx={{ color: '#0284c7', fontSize: 22 }} />
-              <Box>
-                <Typography sx={{ fontWeight: 700, color: '#075985', fontSize: '14px' }}>
-                  All Employees Selected
-                </Typography>
-                <Typography sx={{ color: '#0284c7', fontSize: '13px' }}>
-                  This email will be sent to all {MOCK_EMPLOYEES.length} registered warehouse employees.
-                </Typography>
-              </Box>
-            </Paper>
-          )}
-        </Box>
-
-        {/* ── Section: Warehouse Staff ── */}
-        <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-            <Box sx={{
-              width: 38, height: 38, borderRadius: '10px',
-              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <Engineering sx={{ color: '#fff', fontSize: 20 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '15px' }}>
-                Warehouse Staff
-              </Typography>
-              <Typography sx={{ fontSize: '12px', color: '#94a3b8' }}>
-                Active warehouse team members and their roles
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
-            gap: 2, mt: 2
-          }}>
-            {WAREHOUSE_STAFF.map((staff) => (
-              <Paper key={staff.id} elevation={0}
-                sx={{
-                  border: '1.5px solid #e2e8f0', borderRadius: '14px', p: 2,
-                  transition: 'all 0.2s', cursor: 'default',
-                  '&:hover': { borderColor: '#fdba74', backgroundColor: '#fff7ed', transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(249,115,22,0.08)' }
-                }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                  <Avatar sx={{
-                    width: 42, height: 42, fontSize: '15px', fontWeight: 700,
-                    bgcolor: '#fff7ed', color: '#ea580c', border: '2px solid #fdba74'
-                  }}>
-                    {staff.name.split(' ').map(n => n[0]).join('')}
-                  </Avatar>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '14px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {staff.name}
-                    </Typography>
-                    <Typography sx={{ fontSize: '12px', color: '#ea580c', fontWeight: 600 }}>
-                      {staff.role}
-                    </Typography>
-                  </Box>
-                </Box>
-                <Divider sx={{ borderColor: '#f1f5f9', mb: 1.2 }} />
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                    <Email sx={{ fontSize: 13, color: '#94a3b8' }} />
-                    <Typography sx={{ fontSize: '11.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {staff.email}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
-                    <Chip label={staff.department} size="small"
-                      sx={{ fontSize: '10.5px', fontWeight: 600, height: 22, backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }} />
-                    <Chip
-                      label={staff.status === 'active' ? 'Active' : 'On Leave'}
-                      size="small"
-                      sx={{
-                        fontSize: '10.5px', fontWeight: 700, height: 22,
-                        backgroundColor: staff.status === 'active' ? '#f0fdf4' : '#fef3c7',
-                        color: staff.status === 'active' ? '#16a34a' : '#d97706',
-                        border: `1px solid ${staff.status === 'active' ? '#bbf7d0' : '#fde68a'}`
-                      }} />
-                  </Box>
-                </Box>
-              </Paper>
-            ))}
-          </Box>
-        </Box>
 
         {/* ── Email Preview ── */}
         {(form.subject || form.body) && (
@@ -735,13 +383,7 @@ const SendEmailForm = () => {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                     <Typography sx={{ fontSize: '12px', color: '#94a3b8', width: 36 }}>To:</Typography>
                     <Typography sx={{ fontSize: '13px', color: '#475569' }}>
-                      {form.recipientMode === 'all'
-                        ? `All Employees (${MOCK_EMPLOYEES.length})`
-                        : form.recipientMode === 'zone' && form.selectedZones.length > 0
-                          ? form.selectedZones.join(', ')
-                          : form.selectedEmployees.length > 0
-                            ? `${form.selectedEmployees.length} selected employee(s)`
-                            : <span style={{ color: '#94a3b8' }}>— no recipients selected —</span>}
+                      {form.to_email || <span style={{ color: '#94a3b8' }}>— no recipient —</span>}
                     </Typography>
                   </Box>
                   {form.cc && (
@@ -808,34 +450,24 @@ const SendEmailForm = () => {
         {/* ── Footer actions ── */}
         <Box sx={{ px: 3, pb: 3, pt: 2, display: 'flex', justifyContent: 'flex-end', gap: 1.5, borderTop: '1px solid #f1f5f9' }}>
           <Button variant="outlined"
-            onClick={() => { setForm(initForm); setErrors({}); setAttachments([]); setAttachError(''); setEmployeeSearch(''); setExpandedZones({}); }}
+            onClick={() => { setForm(initForm); setErrors({}); setAttachments([]); setAttachError(''); }}
             sx={{
               textTransform: 'none', fontWeight: 600, borderRadius: '10px', borderColor: '#e2e8f0', color: '#475569',
               '&:hover': { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }
             }}>
             Clear
           </Button>
-          <Tooltip title={
-            form.recipientMode === 'all'
-              ? `Send to all ${MOCK_EMPLOYEES.length} employees`
-              : form.recipientMode === 'zone' && form.selectedZones.length > 0
-                ? `Send to ${zoneRecipients.length} employee(s)`
-                : form.selectedEmployees.length > 0
-                  ? `Send to ${form.selectedEmployees.length} employee(s)`
-                  : 'Select recipients first'
-          }>
-            <span>
-              <Button variant="contained"
-                startIcon={<Send sx={{ fontSize: 18 }} />}
-                onClick={handleSend}
-                sx={{
-                  textTransform: 'none', fontWeight: 700, borderRadius: '10px', fontSize: '14px', px: 3,
-                  backgroundColor: '#0284c7', '&:hover': { backgroundColor: '#0369a1' }
-                }}>
-                Send Email
-              </Button>
-            </span>
-          </Tooltip>
+          <Button variant="contained"
+            startIcon={sending ? <CircularProgress size={18} sx={{ color: '#fff' }} /> : <Send sx={{ fontSize: 18 }} />}
+            onClick={handleSend}
+            disabled={sending}
+            sx={{
+              textTransform: 'none', fontWeight: 700, borderRadius: '10px', fontSize: '14px', px: 3,
+              backgroundColor: '#0284c7', '&:hover': { backgroundColor: '#0369a1' },
+              '&.Mui-disabled': { backgroundColor: '#7dd3fc', color: '#fff' }
+            }}>
+            {sending ? 'Sending...' : 'Send Email'}
+          </Button>
         </Box>
       </Paper>
 
@@ -868,8 +500,7 @@ const SendEmailForm = () => {
                           )}
                         </Box>
                         <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
-                          To: {mail.recipientMode === 'all' ? `All Employees (${MOCK_EMPLOYEES.length})` : mail.recipientMode === 'zone' ? mail.zones.join(', ') : `${mail.recipients.length} employee(s)`}
-                          {mail.attachments.length > 0 && ` · ${mail.attachments.length} attachment(s)`}
+                          Sent{mail.attachments?.length > 0 ? ` · ${mail.attachments.length} attachment(s)` : ''}
                         </Typography>
                       </Box>
                     </Box>

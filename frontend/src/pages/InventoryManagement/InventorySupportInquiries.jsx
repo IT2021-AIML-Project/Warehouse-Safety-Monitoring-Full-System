@@ -50,6 +50,7 @@ const statusStyle = {
 };
 
 const statusOptions = ['Open', 'Pending', 'Resolved'];
+const statusOrder = { Open: 0, Pending: 1, Resolved: 2 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const InventorySupportInquiries = () => {
@@ -60,6 +61,7 @@ const InventorySupportInquiries = () => {
   const [selectedInq, setSelectedInq] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [newStatus, setNewStatus] = useState('');
+  const [respondError, setRespondError] = useState('');
 
   // Fetch all inquiries from backend
   const loadInquiries = async () => {
@@ -82,6 +84,7 @@ const InventorySupportInquiries = () => {
     setSelectedInq(inq);
     setReplyText(inq.response || '');
     setNewStatus(inq.status);
+    setRespondError('');
   };
 
   const closeDialog = () => {
@@ -100,7 +103,8 @@ const InventorySupportInquiries = () => {
       closeDialog();
       loadInquiries();
     } catch (error) {
-      console.error('Failed to respond to inquiry:', error);
+      const msg = error.response?.data?.message || 'Failed to respond to inquiry';
+      setRespondError(msg);
     }
   };
 
@@ -224,14 +228,14 @@ const InventorySupportInquiries = () => {
                           <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '15px' }}>{inq.subject}</Typography>
                           <Chip label={inq.category} size="small" sx={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#f1f5f9', color: '#475569', border: 'none' }} />
                         </Box>
-                        <Typography sx={{ color: '#64748b', fontSize: '13px', lineHeight: 1.6 }}>{inq.message}</Typography>
-                        <Typography sx={{ color: '#94a3b8', fontSize: '12px', mt: 1 }}>
+                        <Typography sx={{ color: '#64748b', fontSize: '15px', lineHeight: 1.6 }}>{inq.message}</Typography>
+                        <Typography sx={{ color: '#94a3b8', fontSize: '14px', mt: 1 }}>
                           Submitted {new Date(inq.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} &bull; By <strong>{inq.submittedBy}</strong>
                         </Typography>
                         {inq.response && (
                           <Box sx={{ mt: 1.5, p: 1.5, backgroundColor: '#f0fdf4', borderRadius: '8px', borderLeft: '3px solid #16a34a' }}>
-                            <Typography sx={{ color: '#15803d', fontSize: '12px', fontWeight: 600, mb: 0.3 }}>Manager Response</Typography>
-                            <Typography sx={{ color: '#166534', fontSize: '13px', lineHeight: 1.6 }}>{inq.response}</Typography>
+                            <Typography sx={{ color: '#15803d', fontSize: '14px', fontWeight: 600, mb: 0.3 }}>Manager Response</Typography>
+                            <Typography sx={{ color: '#166534', fontSize: '15px', lineHeight: 1.6 }}>{inq.response}</Typography>
                           </Box>
                         )}
                       </Box>
@@ -319,22 +323,38 @@ const InventorySupportInquiries = () => {
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   placeholder="Type your response to this inquiry..."
+                  disabled={selectedInq.status === 'Resolved'}
                   sx={{ mb: 2.5 }}
                 />
 
-                {/* Status update */}
-                <FormControl fullWidth size="small">
-                  <InputLabel>Update Status</InputLabel>
-                  <Select
-                    label="Update Status"
-                    value={newStatus}
-                    onChange={(e) => setNewStatus(e.target.value)}
-                  >
-                    {statusOptions.map((s) => (
-                      <MenuItem key={s} value={s}>{s}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {respondError && (
+                  <Paper elevation={0} sx={{ p: 1.5, mb: 2, backgroundColor: '#fee2e2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                    <Typography sx={{ color: '#dc2626', fontSize: '13px', fontWeight: 600 }}>{respondError}</Typography>
+                  </Paper>
+                )}
+
+                {/* Status update — forward-only */}
+                {selectedInq.status === 'Resolved' ? (
+                  <Paper elevation={0} sx={{ p: 2, backgroundColor: '#dcfce7', borderRadius: '10px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CheckCircleOutline sx={{ color: '#16a34a', fontSize: 20 }} />
+                    <Typography sx={{ color: '#15803d', fontSize: '13px', fontWeight: 600 }}>This inquiry has been resolved and is now locked.</Typography>
+                  </Paper>
+                ) : (
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Update Status</InputLabel>
+                    <Select
+                      label="Update Status"
+                      value={newStatus}
+                      onChange={(e) => { setNewStatus(e.target.value); setRespondError(''); }}
+                    >
+                      {statusOptions
+                        .filter((s) => statusOrder[s] >= statusOrder[selectedInq.status])
+                        .map((s) => (
+                          <MenuItem key={s} value={s}>{s}</MenuItem>
+                        ))}
+                    </Select>
+                  </FormControl>
+                )}
               </DialogContent>
 
               <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
@@ -347,14 +367,14 @@ const InventorySupportInquiries = () => {
                 <Button
                   onClick={handleSaveResponse}
                   variant="contained"
-                  disabled={!replyText.trim()}
+                  disabled={!replyText.trim() || selectedInq.status === 'Resolved'}
                   sx={{
                     textTransform: 'none', fontWeight: 700,
                     backgroundColor: '#16a34a', borderRadius: '10px', px: 3,
                     '&:hover': { backgroundColor: '#15803d' },
                   }}
                 >
-                  Save Response
+                  {selectedInq.status === 'Resolved' ? 'Locked' : 'Save Response'}
                 </Button>
               </DialogActions>
             </>

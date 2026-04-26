@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Snackbar, Alert } from '@mui/material';
 import {
-  AddCircleOutline,
+  AddBox,
   ShieldOutlined,
   CategoryOutlined,
   TagOutlined,
@@ -9,21 +9,18 @@ import {
   LocationOnOutlined,
 } from '@mui/icons-material';
 import '../../styles/formStyles.css';
-import { getAllZones, createPPEItem } from '../../services/api';
+import { getAllZones, createPPEItem, getAllPPEItems } from '../../services/api';
 
 const ppeCategories = [
   { value: 'Head Protection', label: 'Head', desc: 'Helmets & hard hats', emoji: '🪖', bg: '#dbeafe' },
-  { value: 'Foot Protection', label: 'Foot', desc: 'Boots & toe guards', emoji: '🥾', bg: '#fef9c3' },
+  { value: 'Face Protection', label: 'Face', desc: 'Face & mouth', emoji: '🥾', bg: '#fef9c3' },
   { value: 'Body Protection', label: 'Body', desc: 'Vests & jackets', emoji: '🦺', bg: '#dcfce7' },
 ];
 
 const ppeItems = [
   { name: 'Safety Helmet', emoji: '⛑️', bg: '#dbeafe', defaultCategory: 'Head Protection' },
   { name: 'Safety Vest', emoji: '🦺', bg: '#dcfce7', defaultCategory: 'Body Protection' },
-  { name: 'Safety Boots', emoji: '🥾', bg: '#fef9c3', defaultCategory: 'Foot Protection' },
-  { name: 'Safety Gloves', emoji: '🧤', bg: '#f3e8ff', defaultCategory: 'Body Protection' },
-  { name: 'Safety Goggles', emoji: '🥽', bg: '#e0f2fe', defaultCategory: 'Head Protection' },
-  { name: 'Face Shield', emoji: '🛡️', bg: '#fee2e2', defaultCategory: 'Head Protection' },
+  { name: 'Mask', emoji: '😷', bg: '#e0f2fe', defaultCategory: 'Head Protection' },
 ];
 
 const AddPPEItem = () => {
@@ -38,17 +35,19 @@ const AddPPEItem = () => {
   const [errors, setErrors] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [zones, setZones] = useState([]);
+  const [existingItems, setExistingItems] = useState([]);
 
   useEffect(() => {
-    const fetchZones = async () => {
+    const fetchData = async () => {
       try {
-        const res = await getAllZones();
-        setZones(res.data.zones.filter(z => z.status === 'Active'));
+        const [zonesRes, itemsRes] = await Promise.all([getAllZones(), getAllPPEItems()]);
+        setZones(zonesRes.data.zones.filter(z => z.status === 'Active'));
+        setExistingItems(itemsRes.data.items || []);
       } catch (err) {
-        console.error('Failed to fetch zones:', err);
+        console.error('Failed to fetch data:', err);
       }
     };
-    fetchZones();
+    fetchData();
   }, []);
 
   const validate = () => {
@@ -60,6 +59,18 @@ const AddPPEItem = () => {
     else if (isNaN(form.quantity) || Number(form.quantity) < 0)
       newErrors.quantity = 'Enter a valid quantity (0 or more)';
     if (!form.zone) newErrors.zone = 'Please select a zone';
+
+    // Check duplicate itemName + zone combination
+    if (form.itemName && form.zone) {
+      const zoneId = form.zone;
+      const duplicate = existingItems.find(
+        (item) => item.name === form.itemName && (item.zone?._id === zoneId || item.zone === zoneId)
+      );
+      if (duplicate) {
+        newErrors.itemName = 'This item already exists in the selected zone. Please choose a different item or zone.';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -83,6 +94,11 @@ const AddPPEItem = () => {
       setSnackbar({ open: true, message: `"${form.itemName}" added successfully!`, severity: 'success' });
       setForm({ itemId: '', itemName: '', categories: '', quantity: '', zone: '' });
       setErrors({});
+      // Refresh existing items list so validation stays accurate
+      try {
+        const itemsRes = await getAllPPEItems();
+        setExistingItems(itemsRes.data.items || []);
+      } catch (e) { /* ignore refresh errors */ }
     } catch (error) {
       const msg = error.response?.data?.message || 'Failed to add PPE item';
       setSnackbar({ open: true, message: msg, severity: 'error' });
@@ -227,7 +243,7 @@ const AddPPEItem = () => {
               ↩ Reset
             </button>
             <button type="submit" className="btn btn-primary">
-              <AddCircleOutline style={{ fontSize: 18 }} />
+              <AddBox style={{ fontSize: 18 }} />
               Add PPE Item
             </button>
           </div>

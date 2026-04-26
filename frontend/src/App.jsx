@@ -7,6 +7,9 @@ import LandingPage from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import ModelInferenceDashboard from './pages/ModelInference/ModelInferenceDashboard';
+import OperationsComplianceDashboard from './pages/OperationsCompliance/OperationsComplianceDashboard';
+import LiveComplianceDashboard from './pages/LiveComplianceDashboard';
 import './styles/App.css';
 
 const theme = createTheme({
@@ -88,6 +91,35 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+              <Route
+                path="/model-inference"
+                element={
+                  <ProtectedRoute>
+                    <ModelInferenceDashboard />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/operations-dashboard"
+                element={
+                  <ProtectedRoute>
+                    <OperationsComplianceDashboard />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/live-dashboard"
+                element={
+                  <ProtectedRoute>
+                    <LiveComplianceDashboard />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route path="/live-compliance" element={<Navigate to="/live-dashboard" replace />} />
 
               {/* Catch all route */}
               <Route path="*" element={<Navigate to="/" />} />

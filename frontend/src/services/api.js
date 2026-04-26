@@ -17,6 +17,7 @@ export const updateEmployee = (id, data) => API.put(`/employees/${id}`, data);
 export const deleteEmployee = (id) => API.delete(`/employees/${id}`);
 export const changeEmployeePassword = (data) => API.post('/employees/change-password', data);
 export const updateEmployeeProfile = (id, data) => API.put(`/employees/${id}/profile`, data);
+export const changeUserPassword = (data) => API.post('/auth/change-password', data);
 
 // ─── PPE Item API ───────────────────────────────────────────
 export const createPPEItem = (data) => API.post('/ppe-items', data);
@@ -72,5 +73,26 @@ export const getInferencesByZone = (zoneId) => API.get(`/inferences/zone/${zoneI
 export const getInferenceMetrics = (zoneId) =>
     API.get('/inferences/metrics', { params: zoneId ? { zone_id: zoneId } : {} });
 export const deleteInferenceApi = (id) => API.delete(`/inferences/${id}`);
+
+export const getLiveSummary = (since) =>
+    API.get('/inferences/summary', { params: { since } });
+
+export const getHourlyReport = (date) =>
+    API.get('/inferences/hourly', { params: { date } });
+
+export const getDateRangeReport = (start, end) =>
+    API.get('/inferences/range', { params: { start, end } });
+
+export const downloadCSV = (start, end) => {
+    const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api')
+        .replace(/\/api$/, ''); // strip trailing /api → gives us the origin
+    const url = `${base}/api/inferences/export/csv?start=${start}&end=${end}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ppe-report-${start}-to-${end}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
 
 export default API;

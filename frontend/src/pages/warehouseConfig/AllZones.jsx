@@ -22,8 +22,8 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { Search, ViewList, Edit, Delete, WarningAmber, Close } from '@mui/icons-material';
-import { getAllZones as fetchZones, updateZone, deleteZone } from '../../services/api';
+import { Search, ViewList, Edit, Delete, WarningAmber, Close, Lock } from '@mui/icons-material';
+import { getAllZones as fetchZones, updateZone, deleteZone, getAllPPEItems, getPopulatedZones } from '../../services/api';
 
 const typeColorMap = {
   Storage: { bg: '#dbeafe', color: '#1d4ed8' },
@@ -71,13 +71,28 @@ const AllZones = () => {
   const [editErrors, setEditErrors] = useState({});
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [zoneToDelete, setZoneToDelete] = useState(null);
+  const [lockedZoneIds, setLockedZoneIds] = useState(new Set());
 
-  // Fetch zones from API
+  // Fetch zones + determine which are locked
   const loadZones = async () => {
     try {
       setLoading(true);
-      const res = await fetchZones();
-      setZones(res.data.zones);
+      const [zonesRes, ppeRes, assignRes] = await Promise.all([
+        fetchZones(),
+        getAllPPEItems(),
+        getPopulatedZones(),
+      ]);
+      setZones(zonesRes.data.zones);
+
+      // Build set of zone IDs that have PPE items or employee assignments
+      const locked = new Set();
+      (ppeRes.data.ppeItems || []).forEach(item => {
+        if (item.zone) locked.add(typeof item.zone === 'object' ? item.zone._id : item.zone);
+      });
+      (assignRes.data.zones || []).forEach(z => {
+        if (z.employees && z.employees.length > 0) locked.add(z._id);
+      });
+      setLockedZoneIds(locked);
     } catch (error) {
       console.error('Failed to fetch zones:', error);
     } finally {
@@ -183,6 +198,7 @@ const AllZones = () => {
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, width: '100%' }}>
           {filtered.map((zone) => {
             const c = typeColorMap[zone.type] || { bg: '#f1f5f9', color: '#64748b' };
+            const isLocked = lockedZoneIds.has(zone._id);
             return (
               <Paper
                 key={zone._id}
@@ -253,20 +269,29 @@ const AllZones = () => {
                       <TableRow sx={{ '& td': { py: 0.9, px: 2, border: 0 } }}>
                         <TableCell sx={{ color: '#64748b', fontSize: '12px', fontWeight: 600 }}>Actions</TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', gap: 0.5 }}>
-                            <Tooltip title="Edit">
-                              <IconButton size="small" onClick={() => openEdit(zone)}
-                                sx={{ color: '#3b82f6', backgroundColor: '#eff6ff', borderRadius: '6px', p: '4px', '&:hover': { backgroundColor: '#dbeafe' } }}>
-                                <Edit sx={{ fontSize: 14 }} />
-                              </IconButton>
+                          {isLocked ? (
+                            <Tooltip title="Cannot edit or delete — PPE items or employees are assigned to this zone">
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Lock sx={{ fontSize: 14, color: '#94a3b8' }} />
+                                <Typography sx={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Locked</Typography>
+                              </Box>
                             </Tooltip>
-                            <Tooltip title="Delete">
-                              <IconButton size="small" onClick={() => openDelete(zone)}
-                                sx={{ color: '#ef4444', backgroundColor: '#fff1f2', borderRadius: '6px', p: '4px', '&:hover': { backgroundColor: '#fee2e2' } }}>
-                                <Delete sx={{ fontSize: 14 }} />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
+                          ) : (
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              <Tooltip title="Edit">
+                                <IconButton size="small" onClick={() => openEdit(zone)}
+                                  sx={{ color: '#3b82f6', backgroundColor: '#eff6ff', borderRadius: '6px', p: '4px', '&:hover': { backgroundColor: '#dbeafe' } }}>
+                                  <Edit sx={{ fontSize: 14 }} />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Delete">
+                                <IconButton size="small" onClick={() => openDelete(zone)}
+                                  sx={{ color: '#ef4444', backgroundColor: '#fff1f2', borderRadius: '6px', p: '4px', '&:hover': { backgroundColor: '#fee2e2' } }}>
+                                  <Delete sx={{ fontSize: 14 }} />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          )}
                         </TableCell>
                       </TableRow>
 

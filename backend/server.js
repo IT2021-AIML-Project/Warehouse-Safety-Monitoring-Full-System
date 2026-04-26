@@ -11,6 +11,7 @@ const zoneAssignmentRoutes = require('./routes/zoneAssignmentRoutes');
 const inquiryRoutes = require('./routes/inquiryRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
+const liveInferenceRoutes = require('./routes/liveInferenceRoutes');
 const inferenceRoutes = require('./routes/inferenceRoutes');
 
 const app = express();
@@ -59,6 +60,7 @@ app.use('/api/zone-assignments', zoneAssignmentRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/feedbacks', feedbackRoutes);
+app.use('/api/inferences', liveInferenceRoutes);
 app.use('/api/inferences', inferenceRoutes);
 
 // Health check route
@@ -76,7 +78,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server (0.0.0.0 so LAN devices can reach the API when using the machine's IP)
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
 });

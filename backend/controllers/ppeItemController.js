@@ -1,5 +1,6 @@
 const PPEItem = require('../models/PPEItem');
 const Zone = require('../models/Zone');
+const ZoneAssignment = require('../models/ZoneAssignment');
 
 // Create a new PPE item
 exports.createPPEItem = async (req, res) => {
@@ -17,6 +18,15 @@ exports.createPPEItem = async (req, res) => {
         const existing = await PPEItem.findOne({ itemId });
         if (existing) {
             return res.status(400).json({ success: false, message: 'Item ID already exists' });
+        }
+
+        // Check duplicate itemName + zone combination
+        const duplicateInZone = await PPEItem.findOne({ name: itemName, zone });
+        if (duplicateInZone) {
+            return res.status(400).json({
+                success: false,
+                message: 'This item already exists in the selected zone. Please choose a different item or zone.'
+            });
         }
 
         // Verify zone exists
@@ -87,7 +97,18 @@ exports.updatePPEItem = async (req, res) => {
         }
 
         if (quantity !== undefined) {
-            item.quantity = Number(quantity);
+            const newQty = Number(quantity);
+
+            // Check if reducing quantity below assigned employee count
+            const assignedCount = await ZoneAssignment.countDocuments({ zone: item.zone });
+            if (newQty < assignedCount) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Cannot reduce quantity below ${assignedCount}. There are ${assignedCount} employee(s) currently assigned to this zone.`
+                });
+            }
+
+            item.quantity = newQty;
         }
 
         await item.save(); // triggers pre-save hook for status

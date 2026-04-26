@@ -224,10 +224,15 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // Find user by username
-    const user = await User.findOne({ username });
+    // Try admin user account first
+    let account = await User.findOne({ username });
 
-    if (!user) {
+    // If not found, try employee login id
+    if (!account) {
+      account = await Employee.findOne({ employeeId: username });
+    }
+
+    if (!account) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
@@ -235,7 +240,7 @@ exports.changePassword = async (req, res) => {
     }
 
     // Verify current password
-    if (user.password !== currentPassword) {
+    if (account.password !== currentPassword) {
       return res.status(401).json({
         success: false,
         message: 'Current password is incorrect'
@@ -243,8 +248,8 @@ exports.changePassword = async (req, res) => {
     }
 
     // Update password
-    user.password = newPassword;
-    await user.save();
+    account.password = newPassword;
+    await account.save();
 
     res.status(200).json({
       success: true,

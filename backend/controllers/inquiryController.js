@@ -163,6 +163,23 @@ exports.respondToInquiry = async (req, res) => {
             });
         }
 
+        // Block editing resolved inquiries
+        if (inquiry.status === 'Resolved') {
+            return res.status(400).json({
+                success: false,
+                message: 'This inquiry has been resolved and cannot be modified.'
+            });
+        }
+
+        // Enforce forward-only status flow: Open → Pending → Resolved
+        const statusOrder = { 'Open': 0, 'Pending': 1, 'Resolved': 2 };
+        if (status && statusOrder[status] < statusOrder[inquiry.status]) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot change status from "${inquiry.status}" back to "${status}". Status can only move forward.`
+            });
+        }
+
         if (response !== undefined) inquiry.response = response;
         if (status) inquiry.status = status;
         if (respondedBy) inquiry.respondedBy = respondedBy;

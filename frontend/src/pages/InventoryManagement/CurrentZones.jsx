@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -60,7 +60,7 @@ const avatarColor = (name) => {
 // ══════════════════════════════════════════════════════════════
 // Zone Detail View
 // ══════════════════════════════════════════════════════════════
-const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
+const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees, allZones }) => {
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [editQty, setEditQty] = useState('');
@@ -72,6 +72,7 @@ const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
   const [selected, setSelected] = useState([]);
   const [removeEmpOpen, setRemoveEmpOpen] = useState(false);
   const [removeEmpTarget, setRemoveEmpTarget] = useState(null);
+  const [assignError, setAssignError] = useState('');
 
   // ── Edit PPE quantity ──
   const openEdit = (item) => { setEditTarget(item); setEditQty(String(item.quantity)); setEditError(''); setEditOpen(true); };
@@ -79,6 +80,12 @@ const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
   const handleEditSave = async () => {
     const qty = parseInt(editQty, 10);
     if (isNaN(qty) || qty < 0) { setEditError('Enter a valid quantity (0 or more).'); return; }
+    // Prevent reducing below assigned employee count
+    const empCount = zone.employees.length;
+    if (qty < empCount) {
+      setEditError(`Cannot reduce quantity below ${empCount}. There are ${empCount} employee(s) currently assigned to this zone.`);
+      return;
+    }
     try {
       await updatePPEItem(editTarget._id, { quantity: qty });
       closeEdit();
@@ -102,13 +109,41 @@ const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
   };
 
   // ── Add employees ──
+  // Build a map of employee ID → zone name for employees assigned to OTHER zones
+  const assignedElsewhere = {};
+  (allZones || []).forEach((z) => {
+    if (z._id !== zone._id) {
+      z.employees.forEach((emp) => {
+        assignedElsewhere[emp._id] = z.name;
+      });
+    }
+  });
+
   const availableToAdd = allEmployees.filter((emp) => !zone.employees.some((e) => e._id === emp._id));
   const filteredEmps = availableToAdd.filter((emp) =>
     emp.name.toLowerCase().includes(empSearch.toLowerCase()) ||
     emp.employeeId.toLowerCase().includes(empSearch.toLowerCase())
   );
+  // PPE capacity: max employees = minimum PPE item quantity in this zone
+  const minPPEQty = zone.items.length > 0
+    ? Math.min(...zone.items.map((item) => item.quantity))
+    : 0;
+  const currentEmpCount = zone.employees.length;
+  const availableSlots = Math.max(0, minPPEQty - currentEmpCount);
+  const capacityFull = availableSlots <= 0;
+
   const toggleSelect = (emp) =>
-    setSelected((prev) => prev.some((e) => e._id === emp._id) ? prev.filter((e) => e._id !== emp._id) : [...prev, emp]);
+    setSelected((prev) => {
+      const alreadySelected = prev.some((e) => e._id === emp._id);
+      if (alreadySelected) return prev.filter((e) => e._id !== emp._id);
+      // Prevent selecting more than available slots
+      if (prev.length >= availableSlots) {
+        setAssignError(`Cannot select more employees. Only ${availableSlots} slot(s) available based on PPE capacity (min PPE qty: ${minPPEQty}).`);
+        return prev;
+      }
+      setAssignError('');
+      return [...prev, emp];
+    });
 
   const handleAddEmployees = async () => {
     try {
@@ -118,10 +153,12 @@ const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
       });
       setSelected([]);
       setEmpSearch('');
+      setAssignError('');
       setAddEmpOpen(false);
       onRefresh();
     } catch (err) {
-      console.error('Assign employees error:', err);
+      const msg = err.response?.data?.message || 'Failed to assign employees';
+      setAssignError(msg);
     }
   };
 
@@ -268,9 +305,19 @@ const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
             <Typography variant="h6" sx={{ fontWeight: 700 }}>Add Employees</Typography>
             <Typography variant="body2" sx={{ color: '#64748b' }}>Select employees to assign to <strong>{zone.name}</strong></Typography>
           </Box>
-          <IconButton onClick={() => setAddEmpOpen(false)} size="small" sx={{ color: '#64748b' }}><Close /></IconButton>
+          <IconButton onClick={() => { setAddEmpOpen(false); setAssignError(''); }} size="small" sx={{ color: '#64748b' }}><Close /></IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ pt: 2 }}>
+          {/* Capacity info banner */}
+          <Alert severity={capacityFull ? 'error' : 'info'} sx={{ mb: 2, borderRadius: '8px' }}>
+            {zone.items.length === 0
+              ? 'No PPE items in this zone. Please add PPE items before assigning employees.'
+              : capacityFull
+                ? `Zone is at full capacity (${currentEmpCount}/${minPPEQty} employees based on minimum PPE quantity).`
+                : `Capacity: ${currentEmpCount}/${minPPEQty} employees assigned. ${availableSlots} slot(s) available.`
+            }
+          </Alert>
+          {assignError && <Alert severity="error" sx={{ mb: 2, borderRadius: '8px' }}>{assignError}</Alert>}
           <TextField fullWidth size="small" placeholder="Search by name or ID..." value={empSearch} onChange={(e) => setEmpSearch(e.target.value)}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: '#94a3b8' }} /></InputAdornment> }}
             sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: '14px' } }} />
@@ -282,15 +329,38 @@ const ZoneDetail = ({ zone, onBack, onRefresh, allEmployees }) => {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {filteredEmps.map((emp) => {
                 const isSelected = selected.some((e) => e._id === emp._id);
+                const frozenZone = assignedElsewhere[emp._id];
+                const isFrozen = !!frozenZone;
                 return (
-                  <Box key={emp._id} onClick={() => toggleSelect(emp)}
-                    sx={{ display: 'flex', alignItems: 'center', gap: 1.5, border: `1.5px solid ${isSelected ? '#7c3aed' : '#e2e8f0'}`, borderRadius: '10px', px: 2, py: 1.5, cursor: 'pointer', backgroundColor: isSelected ? '#faf5ff' : '#fff', transition: 'all 0.15s', '&:hover': { borderColor: '#7c3aed', backgroundColor: '#faf5ff' } }}>
-                    <Avatar sx={{ width: 36, height: 36, fontSize: '14px', fontWeight: 700, backgroundColor: avatarColor(emp.name) }}>{emp.name.charAt(0)}</Avatar>
+                  <Box key={emp._id} onClick={() => !isFrozen && toggleSelect(emp)}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.5,
+                      border: `1.5px solid ${isFrozen ? '#e2e8f0' : isSelected ? '#7c3aed' : '#e2e8f0'}`,
+                      borderRadius: '10px', px: 2, py: 1.5,
+                      cursor: isFrozen ? 'not-allowed' : 'pointer',
+                      backgroundColor: isFrozen ? '#f8fafc' : isSelected ? '#faf5ff' : '#fff',
+                      opacity: isFrozen ? 0.6 : 1,
+                      transition: 'all 0.15s',
+                      '&:hover': isFrozen ? {} : { borderColor: '#7c3aed', backgroundColor: '#faf5ff' },
+                    }}>
+                    <Avatar sx={{ width: 36, height: 36, fontSize: '14px', fontWeight: 700, backgroundColor: isFrozen ? '#94a3b8' : avatarColor(emp.name) }}>{emp.name.charAt(0)}</Avatar>
                     <Box sx={{ flex: 1 }}>
-                      <Typography sx={{ fontWeight: 600, color: '#1e293b', fontSize: '14px' }}>{emp.name}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography sx={{ fontWeight: 600, color: isFrozen ? '#94a3b8' : '#1e293b', fontSize: '14px' }}>{emp.name}</Typography>
+                        {isFrozen && <Lock sx={{ fontSize: 14, color: '#94a3b8' }} />}
+                      </Box>
                       <Typography sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '12px' }}>{emp.employeeId}</Typography>
+                      {isFrozen && (
+                        <Typography sx={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, mt: 0.3 }}>
+                          Already assigned to "{frozenZone}"
+                        </Typography>
+                      )}
                     </Box>
-                    <Checkbox checked={isSelected} onChange={() => toggleSelect(emp)} onClick={(e) => e.stopPropagation()} sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#7c3aed' } }} />
+                    {isFrozen ? (
+                      <Lock sx={{ fontSize: 20, color: '#cbd5e1' }} />
+                    ) : (
+                      <Checkbox checked={isSelected} onChange={() => toggleSelect(emp)} onClick={(e) => e.stopPropagation()} sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#7c3aed' } }} />
+                    )}
                   </Box>
                 );
               })}
@@ -381,6 +451,7 @@ const CurrentZones = () => {
         onBack={() => setSelectedZone(null)}
         onRefresh={handleRefresh}
         allEmployees={employees}
+        allZones={zones}
       />
     );
   }

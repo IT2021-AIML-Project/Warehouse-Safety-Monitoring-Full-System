@@ -29,7 +29,6 @@ import {
   Visibility,
   WarningAmber,
   BugReport,
-  SupportAgent,
   Category,
   History,
   Person,
@@ -43,7 +42,6 @@ const CATEGORIES = [
   { key: 'general',   label: 'General Feedback',    color: '#1d4ed8', bg: '#dbeafe', border: '#93c5fd', icon: Feedback     },
   { key: 'safety',    label: 'Safety Concern',       color: '#dc2626', bg: '#fee2e2', border: '#fca5a5', icon: WarningAmber },
   { key: 'equipment', label: 'Equipment Issue',      color: '#b45309', bg: '#fef3c7', border: '#fcd34d', icon: BugReport    },
-  { key: 'supervisor',label: 'Supervisor Feedback',  color: '#7c3aed', bg: '#ede9fe', border: '#c4b5fd', icon: SupportAgent },
   { key: 'other',     label: 'Other',               color: '#0f766e', bg: '#ccfbf1', border: '#5eead4', icon: Category     },
 ];
 
@@ -200,10 +198,10 @@ const EmployeeFeedbackPage = () => {
           <Box sx={{ p: 3 }}>
 
             {/* Category */}
-            <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#475569', mb: 1 }}>
+            <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#475569', mb: 1, textAlign: 'center' }}>
               Category *
             </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2.5 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2.5, justifyContent: 'center' }}>
               {CATEGORIES.map((c) => {
                 const Icon = c.icon;
                 const active = form.category === c.key;

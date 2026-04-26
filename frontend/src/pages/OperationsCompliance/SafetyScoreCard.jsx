@@ -3,15 +3,13 @@ import {
   Box, Typography, Paper, LinearProgress,
 } from '@mui/material';
 import {
-  Warning, Construction, Air, Checkroom, PanTool, DirectionsWalk,
+  Warning, Construction, Air, Checkroom,
 } from '@mui/icons-material';
 
 const violationTypeDefs = [
   { label: 'No Helmet',      key: 'noHelmet',      icon: <Construction />,  color: '#EF4444', bg: 'linear-gradient(135deg,#EF4444,#DC2626)' },
   { label: 'No Mask',        key: 'noMask',        icon: <Air />,           color: '#F59E0B', bg: 'linear-gradient(135deg,#F59E0B,#D97706)' },
   { label: 'No Safety Vest', key: 'noSafetyVest',  icon: <Checkroom />,     color: '#8B5CF6', bg: 'linear-gradient(135deg,#8B5CF6,#7C3AED)' },
-  { label: 'No Gloves',      key: 'noGloves',      icon: <PanTool />,       color: '#3B82F6', bg: 'linear-gradient(135deg,#3B82F6,#2563EB)' },
-  { label: 'No Safety Boots',key: 'noSafetyBoots', icon: <DirectionsWalk />,color: '#EC4899', bg: 'linear-gradient(135deg,#EC4899,#DB2777)' },
 ];
 
 export function SafetyScoreCard({ totalPeople, violations, safetyScore, violationBreakdown }) {

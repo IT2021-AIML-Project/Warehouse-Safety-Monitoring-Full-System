@@ -18,7 +18,7 @@ exports.runInference = async (req, res) => {
         }
 
         const { zone_id, source_type, camera_id } = req.body;
-        console.log('📍 Inference request - zone_id:', zone_id, '| source_type:', source_type);
+
 
         // Always build allowed classes - Person is always included
         // Only add PPE classes for items actually assigned to this zone
@@ -29,7 +29,9 @@ exports.runInference = async (req, res) => {
                 const ppeNames = JSON.parse(ppe_items);
                 for (const name of ppeNames) {
                     const lower = name.toLowerCase();
-                    if (lower.includes('helmet') || lower.includes('head')) {
+                    // Canonicalize PPE names so AI class filtering/violation counting works.
+                    // Example model may be trained on "Hardhat" but UI expects "helmet/no-helmet".
+                    if (lower.includes('helmet') || lower.includes('hardhat') || lower.includes('head')) {
                         classSet.add('helmet');
                         classSet.add('no-helmet');
                     }
@@ -43,7 +45,7 @@ exports.runInference = async (req, res) => {
             }
         }
         const allowedClasses = classSet;
-        console.log('🎯 Allowed classes for this zone:', [...allowedClasses]);
+
 
         // Send image + allowed classes to Flask AI API
         const FormData = require('form-data');
@@ -332,7 +334,8 @@ exports.deleteInference = async (req, res) => {
 
         // Delete snapshot file if exists
         if (inference.snapshot_url) {
-            const filePath = path.join(__dirname, '..', inference.snapshot_url);
+            const rel = String(inference.snapshot_url).replace(/^\/+/, '');
+            const filePath = path.join(__dirname, '..', rel);
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
             }
@@ -340,7 +343,8 @@ exports.deleteInference = async (req, res) => {
 
         // Delete annotated image if exists
         if (inference.annotated_url) {
-            const annotatedPath = path.join(__dirname, '..', inference.annotated_url);
+            const rel = String(inference.annotated_url).replace(/^\/+/, '');
+            const annotatedPath = path.join(__dirname, '..', rel);
             if (fs.existsSync(annotatedPath)) {
                 fs.unlinkSync(annotatedPath);
             }

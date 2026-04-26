@@ -19,25 +19,12 @@ import {
   ArrowForward,
   QrCode2,
   CalendarToday,
-  VerifiedUser,
-  Inventory2Outlined,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { getMyAssignedZones } from '../../services/api';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-const statusColorMap = {
-  'In Stock': { bg: '#dcfce7', color: '#16a34a' },
-  'Low Stock': { bg: '#fef9c3', color: '#a16207' },
-  'Out of Stock': { bg: '#fee2e2', color: '#dc2626' },
-};
 
-const conditionColorMap = {
-  'Excellent': { bg: '#dcfce7', color: '#16a34a' },
-  'Good':      { bg: '#dbeafe', color: '#1d4ed8' },
-  'Fair':      { bg: '#fef9c3', color: '#a16207' },
-  'Poor':      { bg: '#fee2e2', color: '#dc2626' },
-};
 
 const getCategoryTheme = (category) => {
   const c = category.toLowerCase();
@@ -139,12 +126,14 @@ const EmployeeDashboardHome = ({ onGoToInquiries }) => {
 
                         {/* ── PPE Detail Boxes ── */}
                         <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 1, mt: 0.5 }}>
-                          {/* Serial ID */}
+
+
+                          {/* Item ID */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', px: 1.5, py: 1 }}>
                             <QrCode2 sx={{ fontSize: 15, color: '#94a3b8', flexShrink: 0 }} />
                             <Box sx={{ textAlign: 'left', minWidth: 0 }}>
-                              <Typography sx={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Serial ID</Typography>
-                              <Typography sx={{ fontSize: '11px', color: '#1e293b', fontWeight: 700, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.serialId}</Typography>
+                              <Typography sx={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Item ID</Typography>
+                              <Typography sx={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, fontFamily: 'monospace' }}>{item.serialId}</Typography>
                             </Box>
                           </Box>
 
@@ -153,16 +142,7 @@ const EmployeeDashboardHome = ({ onGoToInquiries }) => {
                             <CalendarToday sx={{ fontSize: 15, color: '#94a3b8', flexShrink: 0 }} />
                             <Box sx={{ textAlign: 'left' }}>
                               <Typography sx={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Date</Typography>
-                              <Typography sx={{ fontSize: '11px', color: '#1e293b', fontWeight: 700 }}>{item.assignedDate}</Typography>
-                            </Box>
-                          </Box>
-
-                          {/* Condition */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, backgroundColor: conditionColorMap[item.condition]?.bg || '#f8fafc', border: `1px solid ${conditionColorMap[item.condition]?.color || '#e2e8f0'}22`, borderRadius: '10px', px: 1.5, py: 1 }}>
-                            <VerifiedUser sx={{ fontSize: 15, color: conditionColorMap[item.condition]?.color || '#64748b', flexShrink: 0 }} />
-                            <Box sx={{ textAlign: 'left' }}>
-                              <Typography sx={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Condition</Typography>
-                              <Typography sx={{ fontSize: '11px', fontWeight: 700, color: conditionColorMap[item.condition]?.color || '#1e293b' }}>{item.condition}</Typography>
+                              <Typography sx={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{item.assignedDate}</Typography>
                             </Box>
                           </Box>
                         </Box>

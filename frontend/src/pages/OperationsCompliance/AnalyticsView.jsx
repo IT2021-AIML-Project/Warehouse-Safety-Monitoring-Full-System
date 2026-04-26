@@ -3,20 +3,14 @@ import { Box, Paper, Typography, Button } from '@mui/material';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, LineChart, Line, AreaChart, Area,
-  PieChart, Pie, Cell,
 } from 'recharts';
-import { BarChart as BarChartIcon, TrendingUp, PieChart as PieChartIcon, ShowChart } from '@mui/icons-material';
+import { BarChart as BarChartIcon, TrendingUp, ShowChart } from '@mui/icons-material';
 
 const tooltipStyle = { backgroundColor: '#fff', border: '2px solid #BDE8F5', borderRadius: 12, padding: 12 };
 
-const violationTypeData = [
-  { name: 'No Helmet',      value: 24, color: '#EF4444' },
-  { name: 'No Mask',        value: 18, color: '#F59E0B' },
-  { name: 'No Safety Vest', value: 12, color: '#8B5CF6' },
-  { name: 'No Gloves',      value:  6, color: '#3B82F6' },
-];
+// Hardcoded data removed; now computed dynamically in the component.
 
-function ChartCard({ icon, iconBg, iconShadow, title, subtitle, children }) {
+export function ChartCard({ icon, iconBg, iconShadow, title, subtitle, children }) {
   return (
     <Paper elevation={0} sx={{ p: 3, border: '2px solid #BDE8F5', borderRadius: 3 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
@@ -126,24 +120,6 @@ export function AnalyticsView({ hourlyData, dailyData }) {
         </>
       )}
 
-      {/* Pie Chart */}
-      <ChartCard icon={<PieChartIcon />} iconBg="linear-gradient(135deg,#F97316,#EA580C)" iconShadow="rgba(249,115,22,0.4)" title="Violation Types Distribution" subtitle="Breakdown by PPE category">
-        <ResponsiveContainer width="100%" height={320}>
-          <PieChart>
-            <Pie
-              data={violationTypeData} cx="50%" cy="50%" labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              outerRadius={100} dataKey="value"
-            >
-              {violationTypeData.map((entry, i) => (
-                <Cell key={`cell-${i}`} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip contentStyle={tooltipStyle} />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </ChartCard>
     </Box>
   );
 }

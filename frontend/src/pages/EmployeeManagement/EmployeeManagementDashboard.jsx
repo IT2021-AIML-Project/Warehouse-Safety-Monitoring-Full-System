@@ -197,7 +197,7 @@ const EmployeeManagementDashboard = () => {
         {activeTab === 3 && <EmployeeFeedbackPage />}
       </Box>
 
-      <Footer />
+      <Footer onProvideFeedback={() => setActiveTab(3)} />
 
       {/* ── Profile Dialog ── */}
       <Dialog

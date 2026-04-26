@@ -3,6 +3,14 @@ const Zone = require('../models/Zone');
 const Employee = require('../models/Employee');
 const PPEItem = require('../models/PPEItem');
 
+// Helper: recalculate PPE item statuses for a zone
+const recalcPPEStatuses = async (zoneId) => {
+    const items = await PPEItem.find({ zone: zoneId });
+    for (const item of items) {
+        await item.save(); // triggers pre-save hook which recalculates status
+    }
+};
+
 // Assign employee to a zone
 exports.assignEmployee = async (req, res) => {
     try {
@@ -19,14 +27,38 @@ exports.assignEmployee = async (req, res) => {
         const empDoc = await Employee.findById(employee);
         if (!empDoc) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-        // Check for duplicate
-        const existing = await ZoneAssignment.findOne({ zone, employee });
-        if (existing) {
-            return res.status(400).json({ success: false, message: 'Employee is already assigned to this zone' });
+        // Check if employee is already assigned to ANY zone
+        const existingAssignment = await ZoneAssignment.findOne({ employee }).populate('zone', 'name');
+        if (existingAssignment) {
+            const zoneName = existingAssignment.zone?.name || 'another zone';
+            return res.status(400).json({
+                success: false,
+                message: `Employee is already assigned to "${zoneName}". An employee can only be assigned to one zone.`
+            });
+        }
+
+        // Check PPE capacity — max employees = minimum PPE item quantity in this zone
+        const ppeItems = await PPEItem.find({ zone });
+        if (ppeItems.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot assign employees — no PPE items are registered in this zone yet.'
+            });
+        }
+        const minPPEQty = Math.min(...ppeItems.map(item => item.quantity));
+        const currentAssignments = await ZoneAssignment.countDocuments({ zone });
+        if (currentAssignments >= minPPEQty) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot assign more employees. This zone has PPE capacity for ${minPPEQty} employee(s) and already has ${currentAssignments} assigned.`
+            });
         }
 
         const assignment = new ZoneAssignment({ zone, employee });
         await assignment.save();
+
+        // Recalculate PPE statuses for this zone
+        await recalcPPEStatuses(zone);
 
         const populated = await ZoneAssignment.findById(assignment._id)
             .populate('zone', 'zoneId name type status')
@@ -49,19 +81,66 @@ exports.bulkAssignEmployees = async (req, res) => {
         }
 
         const results = [];
-        for (const employeeId of employees) {
-            const existing = await ZoneAssignment.findOne({ zone, employee: employeeId });
-            if (!existing) {
-                const assignment = new ZoneAssignment({ zone, employee: employeeId });
-                await assignment.save();
-                results.push(assignment);
-            }
+        const skipped = [];
+
+        // Check PPE capacity — max employees = minimum PPE item quantity in this zone
+        const ppeItems = await PPEItem.find({ zone });
+        if (ppeItems.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot assign employees — no PPE items are registered in this zone yet.'
+            });
         }
+        const minPPEQty = Math.min(...ppeItems.map(item => item.quantity));
+        const currentAssignments = await ZoneAssignment.countDocuments({ zone });
+        const availableSlots = minPPEQty - currentAssignments;
+
+        if (availableSlots <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot assign more employees. This zone has PPE capacity for ${minPPEQty} employee(s) and already has ${currentAssignments} assigned.`
+            });
+        }
+
+        for (const employeeId of employees) {
+            // Check if employee is already assigned to ANY zone
+            const existingAssignment = await ZoneAssignment.findOne({ employee: employeeId }).populate('zone', 'name');
+            if (existingAssignment) {
+                skipped.push({
+                    employee: employeeId,
+                    reason: `Already assigned to "${existingAssignment.zone?.name || 'another zone'}"`
+                });
+                continue;
+            }
+            // Check if capacity reached during loop
+            if (results.length >= availableSlots) {
+                skipped.push({
+                    employee: employeeId,
+                    reason: `Zone PPE capacity reached (max ${minPPEQty})`
+                });
+                continue;
+            }
+            const assignment = new ZoneAssignment({ zone, employee: employeeId });
+            await assignment.save();
+            results.push(assignment);
+        }
+
+        if (results.length === 0 && skipped.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'All selected employees are already assigned to other zones.',
+                skipped
+            });
+        }
+
+        // Recalculate PPE statuses for this zone before responding
+        await recalcPPEStatuses(zone);
 
         res.status(201).json({
             success: true,
-            message: `${results.length} employee(s) assigned successfully`,
-            count: results.length
+            message: `${results.length} employee(s) assigned successfully${skipped.length > 0 ? `, ${skipped.length} skipped (already assigned)` : ''}`,
+            count: results.length,
+            skipped
         });
     } catch (error) {
         console.error('Bulk assign error:', error);
@@ -79,6 +158,9 @@ exports.removeEmployee = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Assignment not found' });
         }
 
+        // Recalculate PPE statuses for the zone
+        await recalcPPEStatuses(assignment.zone);
+
         res.status(200).json({ success: true, message: 'Employee removed from zone successfully' });
     } catch (error) {
         console.error('Remove employee error:', error);
@@ -95,6 +177,9 @@ exports.removeByZoneAndEmployee = async (req, res) => {
         if (!assignment) {
             return res.status(404).json({ success: false, message: 'Assignment not found' });
         }
+
+        // Recalculate PPE statuses for the zone
+        await recalcPPEStatuses(zoneId);
 
         res.status(200).json({ success: true, message: 'Employee removed from zone successfully' });
     } catch (error) {

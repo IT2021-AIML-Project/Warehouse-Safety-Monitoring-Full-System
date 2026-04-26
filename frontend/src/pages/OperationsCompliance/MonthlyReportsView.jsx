@@ -1,162 +1,242 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  Box, Paper, Typography, Button, Grid, Chip, Divider, IconButton, Collapse,
+  Box, Paper, Typography, Button, Chip, Alert, CircularProgress,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import {
-  Warning, TrendingUp, Group, FileDownload, Delete, BarChart as BarChartIcon,
-  CalendarMonth, ExpandLess,
+  CalendarMonth, InfoOutlined, FileDownload, PictureAsPdf,
 } from '@mui/icons-material';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, LineChart, Line,
+  CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis,
 } from 'recharts';
+import { downloadCSV, getDateRangeReport } from '../../services/api';
+import { downloadPDF } from '../../utils/reportUtils';
 
 const tooltipStyle = { backgroundColor: '#fff', border: '2px solid #BDE8F5', borderRadius: 12, padding: 12 };
 
-function ComplianceChip({ value }) {
-  const color = value >= 95 ? 'success' : value >= 90 ? 'warning' : 'error';
-  return <Chip label={`${value}%`} size="small" color={color} sx={{ fontWeight: 700 }} />;
+function scoreColor(value) {
+  if (value >= 95) return '#16A34A';
+  if (value >= 80) return '#CA8A04';
+  return '#DC2626';
 }
 
-export function MonthlyReportsView({ reports, onGenerateReport, onDeleteReport, monthlyMetrics }) {
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [showCharts, setShowCharts] = useState(false);
+function toIsoDate(v) {
+  return new Date(v).toISOString().slice(0, 10);
+}
 
-  const mm = monthlyMetrics;
+export function MonthlyReportsView({ monthlyMetrics }) {
+  const today = new Date();
+  const defaultEnd = toIsoDate(today);
+  const defaultStart = toIsoDate(new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000));
 
-  const statCards = [
-    { label: 'Total Violations', value: mm.violations,          sub: 'This month',      icon: <Warning />,    bg: 'linear-gradient(135deg,#1C4D8D,#4988C4)', shadow: 'rgba(28,77,141,0.3)' },
-    { label: 'Avg Compliance',   value: `${mm.avgComplianceScore}%`, sub: 'Monthly average', icon: <TrendingUp />, bg: 'linear-gradient(135deg,#22C55E,#16A34A)', shadow: 'rgba(34,197,94,0.3)' },
-    { label: 'Safety Score',     value: `${mm.avgSafetyScore}%`,    sub: 'Monthly average', icon: <TrendingUp />, bg: 'linear-gradient(135deg,#8B5CF6,#7C3AED)', shadow: 'rgba(139,92,246,0.3)' },
-    { label: 'Total People',     value: mm.totalPeople,          sub: 'Per day average', icon: <Group />,      bg: 'linear-gradient(135deg,#F97316,#EA580C)', shadow: 'rgba(249,115,22,0.3)' },
-  ];
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [endDate, setEndDate] = useState(defaultEnd);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
 
-  const handleExport = (report) => {
-    const content = [
-      `Monthly Report — ${report.startDate} to ${report.endDate}`,
-      `Generated: ${new Date(report.generatedAt).toLocaleString()}`,
-      `Total Violations: ${report.totalViolations}`,
-      `Avg Compliance: ${report.avgComplianceScore}%`,
-      `Avg Safety Score: ${report.avgSafetyScore}%`,
-      `Total People: ${report.totalPeople}`,
-    ].join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `monthly-report-${report.startDate}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleGenerate = async () => {
+    if (!startDate || !endDate) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await getDateRangeReport(startDate, endDate);
+      setRows(Array.isArray(res.data) ? res.data : []);
+      setLoaded(true);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load date range report');
+      setRows([]);
+      setLoaded(false);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleDownloadPDF = () => {
+    const totalPeople = rows.reduce((s, r) => s + (Number(r.total_persons) || 0), 0);
+    const totalViolations = rows.reduce((s, r) => s + (Number(r.violations) || 0), 0);
+    const avgSafety = rows.length
+      ? rows.reduce((s, r) => s + (Number(r.safety_score) || 0), 0) / rows.length
+      : 0;
+    const avgCompliance = rows.length
+      ? rows.reduce((s, r) => s + (Number(r.compliance_score) || 0), 0) / rows.length
+      : 0;
+
+    downloadPDF({
+      title: 'Date Range Safety Report',
+      dateRange: `${startDate} to ${endDate}`,
+      stats: {
+        totalPeople,
+        totalViolations,
+        safetyScore: avgSafety,
+        complianceScore: avgCompliance,
+      },
+      columns: ['Date', 'Total People', 'Violations', 'Safety Score', 'Compliance Score'],
+      rows: rows.map((r) => [
+        r.date,
+        r.total_persons || 0,
+        r.violations || 0,
+        `${Number(r.safety_score || 0).toFixed(2)}%`,
+        `${Number(r.compliance_score || 0).toFixed(2)}%`,
+      ]),
+      filename: `safety-report-${startDate}-to-${endDate}`,
+    });
+  };
+
+  const derivedMetrics = useMemo(() => {
+    if (!rows.length) return monthlyMetrics;
+
+    const violations = rows.reduce((sum, r) => sum + (Number(r.violations) || 0), 0);
+    const totalPeople = rows.reduce((sum, r) => sum + (Number(r.total_persons) || 0), 0);
+    const score = totalPeople > 0 ? ((totalPeople - violations) / totalPeople) * 100 : 0;
+
+    return {
+      violations,
+      avgComplianceScore: Number(score.toFixed(2)),
+      avgSafetyScore: Number(score.toFixed(2)),
+      totalPeople,
+    };
+  }, [rows, monthlyMetrics]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {/* Stat Cards — full width, equal flex */}
-      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'nowrap', width: '100%' }}>
-        {statCards.map((card) => (
-          <Paper elevation={0} key={card.label} sx={{ p: 2.5, borderRadius: 3, background: card.bg, boxShadow: `0 8px 24px ${card.shadow}`, color: '#fff', flex: 1, transition: 'all .3s', '&:hover': { transform: 'translateY(-4px)', boxShadow: `0 12px 32px ${card.shadow}` } }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Box>
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8 }}>{card.label}</Typography>
-                <Typography sx={{ fontSize: '2rem', fontWeight: 900, mt: 0.5, lineHeight: 1 }}>{card.value}</Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>{card.sub}</Typography>
-              </Box>
-              <Box sx={{ width: 40, height: 40, borderRadius: 2, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {card.icon}
-              </Box>
-            </Box>
-          </Paper>
-        ))}
-      </Box>
-
-      {/* Generate Report */}
       <Paper elevation={0} sx={{ p: 3, border: '2px solid #BDE8F5', borderRadius: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <CalendarMonth sx={{ color: '#1C4D8D' }} />
-          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0F2854' }}>Generate Monthly Report</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0F2854' }}>Date Range Report</Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto', flexWrap: 'wrap' }}>
             <input
-              type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              placeholder="Start Date"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
               style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #BDE8F5', fontSize: '14px', fontFamily: 'inherit', outline: 'none' }}
             />
             <Typography variant="body2" color="text.secondary">to</Typography>
             <input
-              type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-              placeholder="End Date"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
               style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #BDE8F5', fontSize: '14px', fontFamily: 'inherit', outline: 'none' }}
             />
             <Button
               variant="contained"
-              onClick={() => onGenerateReport(startDate, endDate)}
-              disabled={!startDate || !endDate}
+              onClick={handleGenerate}
+              disabled={!startDate || !endDate || loading}
               sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, background: 'linear-gradient(135deg,#1C4D8D,#4988C4)' }}
             >
-              Generate
+              {loading ? 'Loading...' : 'Generate'}
             </Button>
             <Button
               variant="outlined"
-              onClick={() => setShowCharts((v) => !v)}
-              startIcon={showCharts ? <ExpandLess /> : <BarChartIcon />}
+              onClick={() => downloadCSV(startDate, endDate)}
+              disabled={!loaded}
+              startIcon={<FileDownload />}
               sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, borderColor: '#1C4D8D', color: '#1C4D8D' }}
             >
-              {showCharts ? 'Hide Charts' : 'Show Charts'}
+              Download CSV
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleDownloadPDF}
+              disabled={!loaded}
+              startIcon={<PictureAsPdf />}
+              sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, background: 'linear-gradient(135deg,#1C4D8D,#4988C4)' }}
+            >
+              Download PDF
             </Button>
           </Box>
         </Box>
       </Paper>
 
-      {/* Charts */}
-      <Collapse in={showCharts}>
-        <Paper elevation={0} sx={{ p: 3, border: '2px solid #BDE8F5', borderRadius: 3 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0F2854', mb: 2 }}>Monthly Trend Overview</Typography>
+      <Alert icon={<InfoOutlined fontSize="inherit" />} severity="info" sx={{ borderRadius: 3, border: '1px solid #BDE8F5', backgroundColor: '#F0F8FB' }}>
+        Date range report aggregates daily compliance data between the selected dates. Use this for weekly or monthly reviews. CSV export includes every individual violation record with timestamp, zone, type, confidence and severity.
+      </Alert>
+
+      {error && <Alert severity="error" sx={{ borderRadius: 3 }}>{error}</Alert>}
+
+      <Paper elevation={0} sx={{ p: 3, border: '2px solid #BDE8F5', borderRadius: 3 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0F2854', mb: 2 }}>Daily Violations Trend</Typography>
+        {loading ? (
+          <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress /></Box>
+        ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={reports.map((r) => ({ date: r.startDate, violations: r.totalViolations, compliance: r.avgComplianceScore }))}>
+            <AreaChart data={rows}>
+              <defs>
+                <linearGradient id="rangeViolationsGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#EF4444" stopOpacity={0.8} />
+                  <stop offset="100%" stopColor="#EF4444" stopOpacity={0.08} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#BDE8F5" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fontWeight: 600 }} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fontWeight: 600 }} tickLine={false} />
               <Tooltip contentStyle={tooltipStyle} />
               <Legend />
-              <Line type="monotone" dataKey="violations"  stroke="#EF4444" strokeWidth={3} name="Violations"    dot={{ fill: '#EF4444', r: 5 }} />
-              <Line type="monotone" dataKey="compliance"  stroke="#10B981" strokeWidth={3} name="Compliance %"  dot={{ fill: '#10B981', r: 5 }} />
-            </LineChart>
+              <Area type="monotone" dataKey="violations" stroke="#EF4444" strokeWidth={3} fill="url(#rangeViolationsGrad)" name="Violations" />
+            </AreaChart>
           </ResponsiveContainer>
-        </Paper>
-      </Collapse>
-
-      {/* Reports List */}
-      <Paper elevation={0} sx={{ border: '2px solid #BDE8F5', borderRadius: 3, overflow: 'hidden' }}>
-        <Box sx={{ p: 2.5, background: 'linear-gradient(135deg,#F0F8FB,#fff)', borderBottom: '1px solid #BDE8F5' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0F2854' }}>Generated Reports</Typography>
-        </Box>
-        {reports.length === 0 ? (
-          <Box sx={{ p: 4, textAlign: 'center', color: '#94a3b8' }}>
-            <Typography>No reports generated yet. Select a date range and click Generate.</Typography>
-          </Box>
-        ) : (
-          reports.map((report, i) => (
-            <Box key={report.id || i}>
-              {i > 0 && <Divider />}
-              <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, '&:hover': { background: '#F0F8FB' } }}>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#0F2854' }}>
-                    {report.startDate} → {report.endDate}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">Generated: {new Date(report.generatedAt).toLocaleString()}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <ComplianceChip value={report.avgComplianceScore} />
-                  <Typography variant="body2" sx={{ color: '#EF4444', fontWeight: 700 }}>{report.totalViolations} violations</Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>{report.totalPeople} people</Typography>
-                  <Button size="small" startIcon={<FileDownload />} onClick={() => handleExport(report)} sx={{ textTransform: 'none', fontWeight: 600, color: '#1C4D8D' }}>Export</Button>
-                  <IconButton size="small" onClick={() => onDeleteReport(report.id)} sx={{ color: '#EF4444' }}><Delete fontSize="small" /></IconButton>
-                </Box>
-              </Box>
-            </Box>
-          ))
         )}
       </Paper>
+
+      <Paper elevation={0} sx={{ p: 3, border: '2px solid #BDE8F5', borderRadius: 3 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0F2854', mb: 2 }}>Compliance vs Safety</Typography>
+        {loading ? (
+          <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress /></Box>
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={rows}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#BDE8F5" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fontWeight: 600 }} tickLine={false} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fontWeight: 600 }} tickLine={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend />
+              <Line type="monotone" dataKey="compliance_score" stroke="#10B981" strokeWidth={3} name="Compliance Score" dot={{ fill: '#10B981', r: 4, stroke: '#fff', strokeWidth: 2 }} />
+              <Line type="monotone" dataKey="safety_score" stroke="#4988C4" strokeWidth={3} name="Safety Score" dot={{ fill: '#4988C4', r: 4, stroke: '#fff', strokeWidth: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </Paper>
+
+      <TableContainer component={Paper} elevation={0} sx={{ border: '2px solid #BDE8F5', borderRadius: 3 }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ backgroundColor: '#F0F8FB' }}>
+              <TableCell sx={{ fontWeight: 800, color: '#0F2854' }}>Date</TableCell>
+              <TableCell sx={{ fontWeight: 800, color: '#0F2854' }}>People</TableCell>
+              <TableCell sx={{ fontWeight: 800, color: '#0F2854' }}>Violations</TableCell>
+              <TableCell sx={{ fontWeight: 800, color: '#0F2854' }}>Safety Score</TableCell>
+              <TableCell sx={{ fontWeight: 800, color: '#0F2854' }}>Compliance</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {!rows.length && (
+              <TableRow>
+                <TableCell colSpan={5} align="center" sx={{ py: 3, color: '#94a3b8' }}>
+                  No range data loaded yet.
+                </TableCell>
+              </TableRow>
+            )}
+            {rows.map((r) => (
+              <TableRow key={r.date} hover>
+                <TableCell>{r.date}</TableCell>
+                <TableCell>{r.total_persons || 0}</TableCell>
+                <TableCell>{r.violations || 0}</TableCell>
+                <TableCell sx={{ fontWeight: 700, color: scoreColor(Number(r.safety_score) || 0) }}>
+                  {Number(r.safety_score || 0).toFixed(2)}%
+                </TableCell>
+                <TableCell>{Number(r.compliance_score || 0).toFixed(2)}%</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Chip label={`Range: ${startDate} to ${endDate}`} sx={{ fontWeight: 700 }} />
+        <Chip label={`Days loaded: ${rows.length}`} color="info" sx={{ fontWeight: 700 }} />
+      </Box>
     </Box>
   );
 }

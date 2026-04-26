@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getInferencesByZone, deleteInferenceApi } from '../../services/api';
+import { getInferencesByZone, deleteInferenceApi, changeUserPassword } from '../../services/api';
 import {
   Typography,
   Box,
@@ -27,14 +27,10 @@ import {
   Chip,
   Tabs,
   Tab,
-  FormControl,
-  InputLabel,
-  Select,
+  Collapse,
+  Menu,
   MenuItem,
-  Switch,
-  FormControlLabel,
-  Slider,
-  Tooltip,
+  Divider,
 } from '@mui/material';
 import {
   ExitToApp,
@@ -47,23 +43,20 @@ import {
   CloudUpload,
   Videocam,
   Schedule,
-  FiberManualRecord,
   ArrowBack,
   Dashboard,
+  ExpandLess,
+  ExpandMore,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import UploadImage from './UploadImage';
 import InferenceTable from './InferenceTable';
-import MetricsDashboard from './MetricsDashboard';
+import LiveStreamPanel from './LiveStreamPanel';
 
 // Category → emoji + color mapping for PPE items
 const ppeCategoryDisplay = {
   'Head Protection': { emoji: '⛑️', bg: '#dbeafe' },
-  'Foot Protection': { emoji: '🥾', bg: '#fef9c3' },
   'Body Protection': { emoji: '🦺', bg: '#dcfce7' },
-  'Hand Protection': { emoji: '🧤', bg: '#f3e8ff' },
-  'Face Protection': { emoji: '🛡️', bg: '#fee2e2' },
-  'Eye Protection': { emoji: '🥽', bg: '#e0f2fe' },
 };
 const getPPEDisplay = (category) => ppeCategoryDisplay[category] || { emoji: '🔧', bg: '#f1f5f9' };
 
@@ -116,27 +109,10 @@ const ModelInferenceDashboard = () => {
   const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [profileMenuAnchor, setProfileMenuAnchor] = useState(null);
 
-  const [webcamActive, setWebcamActive] = useState(false);
-  const [webcamCamera, setWebcamCamera] = useState('Camera 1');
-  const [webcamFramesProcessed, setWebcamFramesProcessed] = useState(0);
-  const webcamIntervalRef = useRef(null);
-
-  const [scheduleActive, setScheduleActive] = useState(false);
-  const [scheduleCamera, setScheduleCamera] = useState('Camera 1');
-  const [scheduleStartTime, setScheduleStartTime] = useState('08:00');
-  const [scheduleEndTime, setScheduleEndTime] = useState('17:00');
-  const [scheduleLunchEnabled, setScheduleLunchEnabled] = useState(true);
-  const [scheduleBreakStart, setScheduleBreakStart] = useState('12:00');
-  const [scheduleBreakEnd, setScheduleBreakEnd] = useState('13:00');
-  const [scheduleFramesPerCycle, setScheduleFramesPerCycle] = useState(30);
-  const [confirmScheduleOpen, setConfirmScheduleOpen] = useState(false);
-  const scheduleIntervalRef = useRef(null);
-
-  const [scheduledRunsToday, setScheduledRunsToday] = useState(0);
-  const [totalFramesProcessed, setTotalFramesProcessed] = useState(0);
-  const [totalViolationsFromMonitoring, setTotalViolationsFromMonitoring] = useState(0);
-  const [lastRunTime, setLastRunTime] = useState(null);
 
   const addInference = (inference) => setInferences((prev) => [inference, ...prev]);
   const deleteInference = async (inferenceId) => {
@@ -197,34 +173,21 @@ const ModelInferenceDashboard = () => {
     );
   }, [inferences, selectedZone]);
 
-  useEffect(() => {
-    if (!webcamActive) return;
-    webcamIntervalRef.current = setInterval(() => {
-      setWebcamFramesProcessed((n) => n + 1);
-    }, 2000);
-    return () => { if (webcamIntervalRef.current) clearInterval(webcamIntervalRef.current); };
-  }, [webcamActive]);
+  const handleLogout = () => {
+    setProfileMenuAnchor(null);
+    logout();
+    navigate('/login');
+  };
 
-  const handleWebcamStart = () => setWebcamActive(true);
-  const handleWebcamStop = () => setWebcamActive(false);
-
-  useEffect(() => {
-    if (!scheduleActive) return;
-    const runCycle = () => {
-      setScheduledRunsToday((n) => n + 1);
-      setLastRunTime(new Date().toISOString());
-      setTotalFramesProcessed((n) => n + scheduleFramesPerCycle);
-    };
-    runCycle();
-    scheduleIntervalRef.current = setInterval(runCycle, 10000);
-    return () => { if (scheduleIntervalRef.current) clearInterval(scheduleIntervalRef.current); };
-  }, [scheduleActive, scheduleFramesPerCycle]);
-
-  const handleScheduleStartConfirm = () => { setConfirmScheduleOpen(false); setScheduleActive(true); };
-  const handleScheduleStop = () => setScheduleActive(false);
-  const handleLogout = () => { logout(); navigate('/'); };
+  const handleOpenProfileMenu = (event) => setProfileMenuAnchor(event.currentTarget);
+  const handleCloseProfileMenu = () => setProfileMenuAnchor(null);
+  const handleNavigateTo = (path) => {
+    setProfileMenuAnchor(null);
+    navigate(path);
+  };
 
   const handleChangePasswordOpen = () => {
+    setProfileMenuAnchor(null);
     setChangePasswordOpen(true);
     setPasswordError('');
     setPasswordSuccess('');
@@ -250,37 +213,34 @@ const ModelInferenceDashboard = () => {
   };
   const handleChangePassword = async () => {
     if (!validatePasswordForm()) return;
+    setPasswordSaving(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await changeUserPassword({
+        username: user?.username || user?.employeeId,
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
       setPasswordSuccess('Password changed successfully!');
       setTimeout(() => handleChangePasswordClose(), 2000);
-    } catch {
-      setPasswordError('Failed to change password. Please try again.');
+    } catch (err) {
+      setPasswordError(err?.response?.data?.message || 'Failed to change password. Please try again.');
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
   const handleZoneClick = (zone) => {
     setSelectedZone(zone);
     setMode(0);
-    setWebcamActive(false);
-    setScheduleActive(false);
-    setInferences([]);  // Clear old zone's results immediately
-    setWebcamFramesProcessed(0);
-    setScheduledRunsToday(0);
-    setTotalFramesProcessed(0);
-    setTotalViolationsFromMonitoring(0);
-    setLastRunTime(null);
-    loadZoneInferences(zone.zoneId);  // Load only this zone's results from API
+    setInferences([]);
+    setHistoryCollapsed(false);
+    loadZoneInferences(zone.zoneId);
   };
   const handleBackToZones = () => {
     setSelectedZone(null);
-    setWebcamActive(false);
-    setScheduleActive(false);
-    setInferences([]);  // Clear results when going back
+    setInferences([]);
+    setHistoryCollapsed(false);
   };
-  const schedulePreviewText = scheduleLunchEnabled
-    ? `System will run hourly from ${scheduleStartTime} to ${scheduleEndTime}, excluding ${scheduleBreakStart}${scheduleBreakEnd}. Each cycle will process ${scheduleFramesPerCycle} frames over 2 minutes.`
-    : `System will run hourly from ${scheduleStartTime} to ${scheduleEndTime}. Each cycle will process ${scheduleFramesPerCycle} frames over 2 minutes.`;
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
@@ -298,6 +258,7 @@ const ModelInferenceDashboard = () => {
             borderRight: '1px solid #e2e8f0',
             display: 'flex',
             flexDirection: 'column',
+            overflowX: 'hidden',
           },
         }}
       >
@@ -324,7 +285,7 @@ const ModelInferenceDashboard = () => {
         </Box>
 
         {/* Zone list */}
-        <List sx={{ px: 1, pb: 1, flexGrow: 1, overflowY: 'auto' }}>
+        <List sx={{ px: 1, pb: 1, flexGrow: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {activeZones.map((zone) => {
             const c = typeColorMap[zone.type] || { bg: '#f1f5f9', color: '#64748b' };
             const isSelected = selectedZone?.id === zone.id;
@@ -356,31 +317,26 @@ const ModelInferenceDashboard = () => {
                 <ListItemText
                   primary={zone.name}
                   secondary={zone.type}
-                  primaryTypographyProps={{ fontSize: '13px', fontWeight: isSelected ? 600 : 400, color: isSelected ? c.color : '#1e293b' }}
-                  secondaryTypographyProps={{ fontSize: '11px', color: isSelected ? c.color : '#94a3b8' }}
+                  primaryTypographyProps={{
+                    fontSize: '13px',
+                    fontWeight: isSelected ? 600 : 400,
+                    color: isSelected ? c.color : '#1e293b',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                  secondaryTypographyProps={{
+                    fontSize: '11px',
+                    color: isSelected ? c.color : '#94a3b8',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
                 />
               </ListItem>
             );
           })}
         </List>
-
-        {/* Bottom buttons */}
-        <Box sx={{ p: 2, borderTop: '1px solid #e2e8f0' }}>
-          <Button
-            fullWidth variant="outlined" startIcon={<Lock />}
-            onClick={handleChangePasswordOpen}
-            sx={{ mb: 1, borderRadius: '8px', textTransform: 'none', fontSize: '14px' }}
-          >
-            Change Password
-          </Button>
-          <Button
-            fullWidth variant="contained" startIcon={<ExitToApp />}
-            onClick={handleLogout}
-            sx={{ borderRadius: '8px', backgroundColor: '#ef4444', textTransform: 'none', fontSize: '14px', '&:hover': { backgroundColor: '#dc2626' } }}
-          >
-            Logout
-          </Button>
-        </Box>
       </Drawer>
 
       {/* Main Content */}
@@ -419,16 +375,67 @@ const ModelInferenceDashboard = () => {
                 )}
               </Box>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Avatar sx={{ width: 32, height: 32, backgroundColor: '#dbeafe', color: '#1976D2', fontSize: '14px' }}>
+            <Button
+              variant="text"
+              onClick={handleOpenProfileMenu}
+              sx={{
+                textTransform: 'none',
+                color: '#64748b',
+                px: 1,
+                borderRadius: '10px',
+                minWidth: 0,
+                '&:hover': { backgroundColor: '#f1f5f9' },
+              }}
+            >
+              <Avatar sx={{ width: 32, height: 32, backgroundColor: '#dbeafe', color: '#1976D2', fontSize: '14px', mr: 1.25 }}>
                 <Person sx={{ fontSize: 18 }} />
               </Avatar>
               <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 500 }}>
                 Welcome, {user?.name || user?.username || user?.email || 'User'}
               </Typography>
-            </Box>
+            </Button>
           </Toolbar>
         </AppBar>
+
+        <Menu
+          anchorEl={profileMenuAnchor}
+          open={Boolean(profileMenuAnchor)}
+          onClose={handleCloseProfileMenu}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          PaperProps={{ sx: { borderRadius: '12px', minWidth: 220, mt: 1 } }}
+        >
+          <Box sx={{ px: 2, py: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1e293b' }}>
+              {user?.name || user?.fullName || user?.username || 'User'}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              {user?.email || 'Account'}
+            </Typography>
+          </Box>
+          <Divider />
+          <MenuItem onClick={() => handleNavigateTo('/model-inference')} sx={{ py: 1.2 }}>
+            <Dashboard sx={{ fontSize: 18, mr: 1.2, color: '#64748b' }} />
+            Go to Model Inference
+          </MenuItem>
+          <MenuItem onClick={() => handleNavigateTo('/operations-dashboard')} sx={{ py: 1.2 }}>
+            <Security sx={{ fontSize: 18, mr: 1.2, color: '#64748b' }} />
+            Go to Operations Compliance
+          </MenuItem>
+          <MenuItem onClick={() => handleNavigateTo('/live-dashboard')} sx={{ py: 1.2 }}>
+            <Videocam sx={{ fontSize: 18, mr: 1.2, color: '#64748b' }} />
+            Go to Live Dashboard
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={handleChangePasswordOpen} sx={{ py: 1.2 }}>
+            <Lock sx={{ fontSize: 18, mr: 1.2, color: '#64748b' }} />
+            Change Password
+          </MenuItem>
+          <MenuItem onClick={handleLogout} sx={{ py: 1.2, color: '#dc2626' }}>
+            <ExitToApp sx={{ fontSize: 18, mr: 1.2 }} />
+            Logout
+          </MenuItem>
+        </Menu>
 
         {/* Zone Grid (home) */}
         {!selectedZone && (
@@ -540,7 +547,7 @@ const ModelInferenceDashboard = () => {
               >
                 <Tab icon={<CloudUpload sx={{ fontSize: 18 }} />} iconPosition="start" label="Upload Image" />
                 <Tab icon={<Videocam sx={{ fontSize: 18 }} />} iconPosition="start" label="Live Webcam" />
-                <Tab icon={<Schedule sx={{ fontSize: 18 }} />} iconPosition="start" label="CCTV Monitoring" />
+                <Tab icon={<Schedule sx={{ fontSize: 18 }} />} iconPosition="start" label="CCTV / IP Camera" />
               </Tabs>
             </Box>
 
@@ -564,176 +571,65 @@ const ModelInferenceDashboard = () => {
               <Box sx={{ p: 4 }}>
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#1e293b', mb: 0.5 }}>
-                    Live Real-Time Monitoring  {selectedZone.name}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>
-                    Stream from a camera and run continuous safety analysis.
+                    Live Webcam Monitoring
                   </Typography>
                 </Box>
-                <Card elevation={0} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', p: 3, maxWidth: 560 }}>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Camera</InputLabel>
-                        <Select value={webcamCamera} label="Camera" onChange={(e) => setWebcamCamera(e.target.value)} disabled={webcamActive}>
-                          <MenuItem value="Camera 1">Camera 1</MenuItem>
-                          <MenuItem value="Camera 2">Camera 2</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                      <Button variant="contained" onClick={handleWebcamStart} disabled={webcamActive} sx={{ borderRadius: '8px', textTransform: 'none' }}>
-                        Start Monitoring
-                      </Button>
-                      <Button variant="outlined" color="error" onClick={handleWebcamStop} disabled={!webcamActive} sx={{ borderRadius: '8px', textTransform: 'none' }}>
-                        Stop Monitoring
-                      </Button>
-                      <Chip
-                        label={webcamActive ? 'Live' : 'Offline'}
-                        color={webcamActive ? 'success' : 'default'}
-                        icon={webcamActive ? <FiberManualRecord sx={{ fontSize: '14px !important' }} /> : undefined}
-                      />
-                    </Grid>
-                    {webcamActive && (
-                      <Grid item xs={12}>
-                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                          <Typography variant="caption" color="text.secondary">Frames processed</Typography>
-                          <Typography variant="h5" fontWeight="bold">{webcamFramesProcessed}</Typography>
-                          <Typography variant="caption" color="text.secondary">Detections appended every 2 seconds (simulated).</Typography>
-                        </Box>
-                      </Grid>
-                    )}
-                  </Grid>
-                </Card>
+                <LiveStreamPanel
+                  key={`webcam-${selectedZone?.id}`}
+                  type="webcam"
+                  ppeItems={selectedZone?.items || []}
+                />
               </Box>
             )}
 
-            {/* Mode 2: CCTV Schedule */}
+            {/* Mode 2: CCTV / IP Camera */}
             {mode === 2 && (
               <Box sx={{ p: 4 }}>
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#1e293b', mb: 0.5 }}>
-                    Automated CCTV Monitoring  {selectedZone.name}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>
-                    Configure automatic hourly safety scans during operational hours.
-                  </Typography>
-                </Box>
-                <Alert severity="warning" sx={{ mb: 3, borderRadius: '8px' }}>
-                  Automated monitoring consumes system resources. Use during operational hours only.
-                </Alert>
-                <Card elevation={0} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', p: 3, mb: 3 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>Schedule Settings</Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Camera</InputLabel>
-                        <Select value={scheduleCamera} label="Camera" onChange={(e) => setScheduleCamera(e.target.value)} disabled={scheduleActive}>
-                          <MenuItem value="Camera 1">Camera 1</MenuItem>
-                          <MenuItem value="Camera 2">Camera 2</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={6} sm={3}>
-                      <TextField label="Start Time" type="time" value={scheduleStartTime} onChange={(e) => setScheduleStartTime(e.target.value)} InputLabelProps={{ shrink: true }} fullWidth size="small" disabled={scheduleActive} />
-                    </Grid>
-                    <Grid item xs={6} sm={3}>
-                      <TextField label="End Time" type="time" value={scheduleEndTime} onChange={(e) => setScheduleEndTime(e.target.value)} InputLabelProps={{ shrink: true }} fullWidth size="small" disabled={scheduleActive} />
-                    </Grid>
-                    <Grid item xs={12}>
-                      <FormControlLabel control={<Switch checked={scheduleLunchEnabled} onChange={(e) => setScheduleLunchEnabled(e.target.checked)} disabled={scheduleActive} />} label="Enable lunch break exclusion" />
-                    </Grid>
-                    {scheduleLunchEnabled && (
-                      <>
-                        <Grid item xs={6} sm={3}>
-                          <TextField label="Break Start" type="time" value={scheduleBreakStart} onChange={(e) => setScheduleBreakStart(e.target.value)} InputLabelProps={{ shrink: true }} fullWidth size="small" disabled={scheduleActive} />
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <TextField label="Break End" type="time" value={scheduleBreakEnd} onChange={(e) => setScheduleBreakEnd(e.target.value)} InputLabelProps={{ shrink: true }} fullWidth size="small" disabled={scheduleActive} />
-                        </Grid>
-                      </>
-                    )}
-                    <Grid item xs={12}>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        Frames per cycle: {scheduleFramesPerCycle}
-                      </Typography>
-                      <Slider value={scheduleFramesPerCycle} onChange={(_, v) => setScheduleFramesPerCycle(v)} min={5} max={60} valueLabelDisplay="auto" disabled={scheduleActive} sx={{ maxWidth: 320 }} />
-                    </Grid>
-                  </Grid>
-                </Card>
-                <Card elevation={0} sx={{ borderRadius: '10px', p: 2, mb: 3, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <Typography variant="caption" color="text.secondary">Schedule preview</Typography>
-                  <Typography variant="body2" sx={{ lineHeight: 1.6, mt: 0.5 }}>{schedulePreviewText}</Typography>
-                </Card>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 4 }}>
-                  <Button variant="contained" onClick={() => setConfirmScheduleOpen(true)} disabled={scheduleActive} sx={{ borderRadius: '8px', textTransform: 'none' }}>
-                    Start Automated Monitoring
-                  </Button>
-                  <Button variant="outlined" color="error" onClick={handleScheduleStop} disabled={!scheduleActive} sx={{ borderRadius: '8px', textTransform: 'none' }}>
-                    Stop Monitoring
-                  </Button>
-                  <Chip label={scheduleActive ? 'Schedule Active' : 'Schedule Stopped'} color={scheduleActive ? 'success' : 'default'} />
-                </Box>
-                <Card elevation={0} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', p: 3 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>Monitoring Overview</Typography>
-                  <Grid container spacing={3}>
-                    {[
-                      { label: 'Scheduled runs today', value: scheduledRunsToday },
-                      { label: 'Total frames processed', value: totalFramesProcessed },
-                      { label: 'Total violations detected', value: totalViolationsFromMonitoring },
-                      { label: 'Last run time', value: lastRunTime ? new Date(lastRunTime).toLocaleTimeString() : '', isText: true },
-                    ].map(({ label, value, isText }) => (
-                      <Grid item xs={6} md={3} key={label}>
-                        <Typography variant="caption" color="text.secondary">{label}</Typography>
-                        <Typography variant={isText ? 'body2' : 'h5'} fontWeight={isText ? 500 : 'bold'}>{value}</Typography>
-                      </Grid>
-                    ))}
-                  </Grid>
-                </Card>
+                
+                <LiveStreamPanel
+                  key={`cctv-${selectedZone?.id}`}
+                  type="cctv"
+                  ppeItems={selectedZone?.items || []}
+                />
               </Box>
             )}
-
-            {/* Metrics */}
-            <Box sx={{ px: 4, pb: 4 }}>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1e293b' }}>Performance Overview</Typography>
-                <Typography variant="body2" sx={{ color: '#64748b' }}>Key metrics from all safety scans in this zone.</Typography>
-              </Box>
-              <MetricsDashboard inferences={zoneInferences} />
-            </Box>
 
             {/* Safety Scan History */}
             <Box sx={{ px: 4, pb: 5 }}>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1e293b' }}>Safety Scan History</Typography>
-                <Typography variant="body2" sx={{ color: '#64748b' }}>Previous AI safety analyses for {selectedZone.name}.</Typography>
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1e293b' }}>Safety Scan History</Typography>
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>Previous AI safety analyses for {selectedZone.name}.</Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setHistoryCollapsed((prev) => !prev)}
+                  endIcon={historyCollapsed ? <ExpandMore /> : <ExpandLess />}
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: '8px',
+                    minWidth: 130,
+                    alignSelf: 'center',
+                  }}
+                >
+                  {historyCollapsed ? 'Show History' : 'Hide History'}
+                </Button>
               </Box>
-              <Card elevation={0} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <InferenceTable inferences={zoneInferences} onDelete={deleteInference} />
-                </CardContent>
-              </Card>
-              <Typography variant="caption" sx={{ display: 'block', mt: 2, color: '#94a3b8', fontStyle: 'italic' }}>
-                AI decisions should be reviewed by a safety supervisor before disciplinary action.
-              </Typography>
+              <Collapse in={!historyCollapsed} timeout="auto" unmountOnExit>
+                <Card elevation={0} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                  <CardContent sx={{ p: 3 }}>
+                    <InferenceTable inferences={zoneInferences} onDelete={deleteInference} />
+                  </CardContent>
+                </Card>
+                <Typography variant="caption" sx={{ display: 'block', mt: 2, color: '#94a3b8', fontStyle: 'italic' }}>
+                  AI decisions should be reviewed by a safety supervisor before disciplinary action.
+                </Typography>
+              </Collapse>
             </Box>
           </Box>
         )}
       </Box>
-
-      {/* Confirm Schedule Dialog */}
-      <Dialog open={confirmScheduleOpen} onClose={() => setConfirmScheduleOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '12px' } }}>
-        <DialogTitle>Start automated monitoring?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            The system will run on the configured schedule for <strong>{selectedZone?.name}</strong>. Continue?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmScheduleOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleScheduleStartConfirm}>Start</Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Change Password Dialog */}
       <Dialog open={changePasswordOpen} onClose={handleChangePasswordClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '12px', padding: '8px' } }}>
@@ -769,10 +665,10 @@ const ModelInferenceDashboard = () => {
             Cancel
           </Button>
           <Button
-            onClick={handleChangePassword} variant="contained" disabled={passwordSuccess !== ''}
+            onClick={handleChangePassword} variant="contained" disabled={passwordSuccess !== '' || passwordSaving}
             sx={{ borderRadius: '8px', textTransform: 'none', minWidth: 100, backgroundColor: '#1976D2', '&:hover': { backgroundColor: '#1565c0' } }}
           >
-            Change Password
+            {passwordSaving ? 'Saving...' : 'Change Password'}
           </Button>
         </DialogActions>
       </Dialog>
