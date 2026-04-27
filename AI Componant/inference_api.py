@@ -17,6 +17,26 @@ from PIL import Image
 app = Flask(__name__)
 CORS(app)
 
+
+# ─── Health-check / root route (required by Hugging Face Spaces) ─────────────
+@app.route('/')
+def index():
+    return jsonify({
+        'status': 'running',
+        'service': 'PPE Detection AI Inference API',
+        'version': '1.0.0',
+        'endpoints': [
+            '/model-info',
+            '/detect',
+            '/detect-video',
+            '/webcam/start',
+            '/webcam/stop',
+            '/cctv/start',
+            '/cctv/stop'
+        ]
+    })
+
+
 # ─── Upload folder for processed videos ──────────────────────────────────────
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
