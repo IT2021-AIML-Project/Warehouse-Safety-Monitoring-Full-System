@@ -25,7 +25,22 @@
 </p>
 
 ---
+## 👥 Group Members — DS 1.1 | Group 10
 
+<div align="center">
+
+| # | Name | Student ID | GitHub Profile |
+|:-:|:-----|:----------:|:--------------:|
+| 01 | Disanayaka S.K | `IT24102217` | [![GitHub](https://img.shields.io/badge/-Komal--Disanayaka-181717?style=flat-square&logo=github)](https://github.com/Komal-Disanayaka) |
+| 02 | Kommalage S.G | `IT24100641` | [![GitHub](https://img.shields.io/badge/-savinikommalage-181717?style=flat-square&logo=github)](https://github.com/savinikommalage) |
+| 03 | Jayathunga N.P | `IT24102981` | [![GitHub](https://img.shields.io/badge/-Nehara--Jay-181717?style=flat-square&logo=github)](https://github.com/Nehara-Jay) |
+| 04 | Gamlath G.M.W.S | `IT24102959` | [![GitHub](https://img.shields.io/badge/-wathsalagamlath-181717?style=flat-square&logo=github)](https://github.com/wathsalagamlath) |
+| 05 | Athukorala M.B | `IT24101937` | [![GitHub](https://img.shields.io/badge/-monishkaGIT-181717?style=flat-square&logo=github)](https://github.com/monishkaGIT) |
+| 06 | Jayarathna W.A.S.H.S | `IT24102968` | [![GitHub](https://img.shields.io/badge/-shyamaljayarathne-181717?style=flat-square&logo=github)](https://github.com/shyamaljayarathne) |
+
+</div>
+
+---
 ## 📖 About The Project
 
 The **Warehouse Safety Monitoring System** is a full-stack, AI-integrated web application designed to enhance workplace safety in warehouse environments. It leverages **YOLOv8 deep learning** to perform real-time **Personal Protective Equipment (PPE) detection** through image uploads, video analysis, live webcam feeds, and CCTV/IP camera streams.
@@ -43,22 +58,7 @@ The system monitors compliance with safety regulations by detecting the presence
 
 ---
 
-## 👥 Group Members — DS 1.1 | Group 10
 
-<div align="center">
-
-| # | Name | Student ID | GitHub Profile |
-|:-:|:-----|:----------:|:--------------:|
-| 01 | Disanayaka S.K | `IT24102217` | [![GitHub](https://img.shields.io/badge/-Komal--Disanayaka-181717?style=flat-square&logo=github)](https://github.com/Komal-Disanayaka) |
-| 02 | Kommalage S.G | `IT24100641` | [![GitHub](https://img.shields.io/badge/-savinikommalage-181717?style=flat-square&logo=github)](https://github.com/savinikommalage) |
-| 03 | Jayathunga N.P | `IT24102981` | [![GitHub](https://img.shields.io/badge/-Nehara--Jay-181717?style=flat-square&logo=github)](https://github.com/Nehara-Jay) |
-| 04 | Gamlath G.M.W.S | `IT24102959` | [![GitHub](https://img.shields.io/badge/-wathsalagamlath-181717?style=flat-square&logo=github)](https://github.com/wathsalagamlath) |
-| 05 | Athukorala M.B | `IT24101937` | [![GitHub](https://img.shields.io/badge/-monishkaGIT-181717?style=flat-square&logo=github)](https://github.com/monishkaGIT) |
-| 06 | Jayarathna W.A.S.H.S | `IT24102968` | [![GitHub](https://img.shields.io/badge/-shyamaljayarathne-181717?style=flat-square&logo=github)](https://github.com/shyamaljayarathne) |
-
-</div>
-
----
 
 ## 🏗️ System Architecture
 
